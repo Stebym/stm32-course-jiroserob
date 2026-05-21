@@ -19,54 +19,79 @@
 /*
  * main.c
  *
- * Descripcion: Pruebas de tipos de datos, sistemas numericos y desplazamientos - Semana 1.
+ * Descripcion: Pruebas de tipos de datos, sistemas numericos, desplazamientos
+ * y configuracion basica de GPIO - Semana 1.
  * Autor: Jimmy Stebym Rosero Barrera (jiroserob@unal.edu.co)
  *
  */
 
 #include <stdint.h>
+#include <stm32f4xx.h>
 
+// --- DECLARACIÓN DE VARIABLES GLOBALES ---
 uint8_t variable1 = 0;
 uint16_t variable2 = 0;
 uint32_t variable3 = 0;
 uint8_t overflow = 0;
-
 
 uint16_t variable1_dec = 0;
 uint16_t variable2_hex = 0;
 uint16_t variable3_bin = 0;
 
 
-
 int main(void)
 {
+    // 1. Pruebas de asignación básica
     variable1 = 123;
     variable2 = 4986;
     variable3 = 12345678;
 
+    // 2. Pruebas de sistemas numéricos (mismo valor decimal: 32)
     variable1_dec = 32;
     variable2_hex = 0x20;
     variable3_bin = 0b100000;
 
+    // 3. Pruebas de desplazamientos de bits
     variable3_bin = variable3_bin << 3;
     variable3_bin = variable3_bin >> 3;
 
+    // 4. Pruebas de desbordamiento (Overflow)
     variable1 = 255;
     variable2 = 255;
     variable3 = 255;
-    overflow = variable1 + 1;
+    overflow = variable1 + 1; // Aquí pasa de 255 a 0 por el límite de 8 bits (uint8_t)
     overflow = overflow + 1;
 
     overflow = 20;
     overflow = 0;
 
+    // --- 5. CONFIGURACIÓN DE PERIFÉRICOS (GPIO) ---
+
+    // 1. Habilitar el reloj para el puerto GPIOA
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+
+    // 2. Configurar el Pin 5 (PA5) como salida digital
+    // Primero, limpiamos los bits correspondientes al Pin 5 en el registro MODER
+    GPIOA->MODER &= ~(GPIO_MODER_MODER5);
+
+
+    // Luego, configuramos esos bits en '01' para establecer el modo de salida (Output mode)
+    GPIOA->MODER |= GPIO_MODER_MODER5_0;
+
+    // 3. Encender el LED 2
+    // Ponemos en alto (1) el bit 5 del registro de datos de salida (ODR) antes del bucle
+    GPIOA->ODR |= GPIO_ODR_ODR_5;
+
+
+
+    // --- 6. BUCLE DE CONTEO ---
     for (uint16_t counter = 0; counter < 735; counter++){
         overflow++;
-
     }
 
+    // --- 7. BUCLE INFINITO ---
     while(1){
-
+        // El bucle queda limpio. El LED ya se encendió arriba y se mantendrá así.
     }
 
     return 0;
