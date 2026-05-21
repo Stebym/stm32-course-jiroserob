@@ -24,39 +24,50 @@
  *
  */
 
-#include <stdint.h> /* Tipos de ancho fijo obligatorios */
+#include <stdint.h>
 
-#if !defined(__SOFT_FP__) && defined(__ARM_FP)
-  #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
-#endif
+uint8_t variable1 = 0;
+uint16_t variable2 = 0;
+uint32_t variable3 = 0;
+uint8_t overflow = 0;
 
-/* Seccion 3: Variables Globales */
-uint8_t variable_8bits = 0;
-uint16_t variable_16bits = 0;
-uint32_t variable_32bits = 0;
 
-uint16_t variable_16bits_dec = 0;
-uint16_t variable_16bits_bin = 0;
-uint16_t variable_16bits_hex = 0; /* Nombre corregido para coincidir con el uso */
+uint16_t variable1_dec = 0;
+uint16_t variable2_hex = 0;
+uint16_t variable3_bin = 0;
+
+
 
 int main(void)
 {
-	/* Asignaciones basicas */
-	variable_8bits = 123;
-	variable_16bits = 4986;
-	variable_32bits = 12345678;
+    variable1 = 123;
+    variable2 = 4986;
+    variable3 = 12345678;
 
-	/* Pruebas de sistemas numericos */
-	variable_16bits_dec = 32;       /* Decimal */
-	variable_16bits_bin = 0b100000; /* Binario (usa prefijo 0b) */
-	variable_16bits_hex = 0x20;     /* Hexadecimal (usa prefijo 0x) */
+    variable1_dec = 32;
+    variable2_hex = 0x20;
+    variable3_bin = 0b100000;
 
-	/* Operaciones de desplazamiento */
-	variable_16bits_hex = variable_16bits_hex << 3; /* Multiplica por 2^3 (8) */
-	variable_16bits_hex = variable_16bits_hex >> 3; /* Divide por 2^3 (8) */
+    variable3_bin = variable3_bin << 3;
+    variable3_bin = variable3_bin >> 3;
 
-    while(1) /* Bucle infinito obligatorio */
-    {
-    	/* El codigo se queda aqui tras ejecutar las pruebas iniciales */
+    variable1 = 255;
+    variable2 = 255;
+    variable3 = 255;
+    overflow = variable1 + 1;
+    overflow = overflow + 1;
+
+    overflow = 20;
+    overflow = 0;
+
+    for (uint16_t counter = 0; counter < 735; counter++){
+        overflow++;
+
     }
+
+    while(1){
+
+    }
+
+    return 0;
 }
