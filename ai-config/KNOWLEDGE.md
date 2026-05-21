@@ -1,62 +1,42 @@
-# KNOWLEDGE.md — Week 1: C Language Fundamentals
+# KNOWLEDGE.md — Week 2: Bitwise Logic Operators and FSM Introduction
 
 ## Overview
 
-This week the student is being introduced to the C programming language for the first time, working directly within the STM32CubeIDE environment connected to a real STM32F4xx microcontroller. There is no PC-based "Hello World" phase — the student uses the debugger and variable viewer as their primary feedback mechanism from day one. This is an intense week that covers the foundational C concepts needed for all future embedded programming.
+This week the student is learning the bitwise logic operators and applying them first to regular variables, then to real MCU registers as a first exposure. The student is also being introduced to Finite State Machines (FSM) as a design and thinking tool — diagrams and state identification only, no code implementation. Many things related to registers and MCU architecture are still "black boxes" at this point — the AI must respect this and not attempt to explain the full picture yet.
 
 ---
 
-## Previously Mastered Topics (Week 0)
+## Previously Mastered Topics (Week 0–1)
 
-The student understands CMOS technology at a foundational level: how CMOS transistors work, the CMOS inverter and its significance, and NAND gates built from CMOS transistors, including why the NAND gate is fundamentally important in digital electronics.
+The student understands CMOS technology, logic gates, combinational and sequential circuits. They have simulated registers, shift registers, prescalers, and a timer using the "Digital" simulation tool. They understand binary, hexadecimal, and 2's complement number systems.
 
-The student has worked with combinational circuits using the simulation tool "Digital," including logic gates, a simplified ALU, multiplexers, and other combinational structures. The student has also simulated sequential circuits including registers, shift registers, prescalers, and a timer. Through these simulations, the student has a practical understanding of how registers store data, how shift operations work at the hardware level, and how a prescaler divides a clock frequency.
+In C programming, the student can write simple programs using `if/else`, `while`, `for`, `do-while`, `switch-case`, and fixed-width data types from `stdint.h` (`uint8_t`, `int8_t`, `uint16_t`, `int16_t`, `uint32_t`, `int32_t`). They understand arithmetic operators (`+`, `-`, `*`, `/`, `%`) and shift operators (`>>`, `<<`). They understand how C evaluates boolean expressions (0 is false, anything not 0 is true). However, their C skills are still developing — expect occasional syntax errors and uncertainty.
 
-The student understands binary and hexadecimal number systems, can convert between decimal, binary, and hexadecimal representations, and understands 2's complement representation for signed numbers. The student understands bit positions and their significance within a binary word.
+The student knows how to use `#include` and `#define` at a basic level. They can create and use the STM32CubeIDE environment, set breakpoints, step through code, and inspect variables using the debugger.
 
-The student has NO prior programming experience in any language. Assume zero knowledge of C or any other programming language unless demonstrated otherwise.
+The student does NOT know structures, unions, arrays, pointers, or enumerations. The `->` operator has been introduced only as "the way to access registers" without a deep explanation — do not explain structures or pointers if asked.
 
 ---
 
-## Current Learning Focus (Week 1)
+## Current Learning Focus (Week 2)
 
-The student is learning the fundamentals of C programming within the STM32CubeIDE environment. All verification and feedback happens through the debugger and variable viewer — there is no `printf` or console output available. The specific concepts being learned this week are:
+### Bitwise Logic Operators
 
-### IDE and environment
+The student is learning the following bitwise logic operators and their compound assignment forms:
 
-Creating a project in STM32CubeIDE (without CubeMX code generation), understanding the basic project skeleton, replacing the auto-generated `for(;;)` with `while(1){}`, using the debugger to set breakpoints, step through code, and inspect variable values in real time.
+AND (`&`), OR (`|`), NOT / bitwise complement (`~`), XOR (`^`), and the compound forms: OR-equals (`|=`) for setting bits, AND-equals with NOT (`&= ~()`) for clearing bits, and XOR-equals (`^=`) for toggling bits.
 
-### Data types
+The learning follows two stages within the week. First, the student practices these operators with regular variables — creating values, applying bitwise operations, and verifying results in the debugger. The student already understands the concept of a mask as a variable created for the purpose of modifying specific bits in another variable. Second, the student applies these operations to real MCU registers as a first exposure — specifically enabling the RCC clock signal for a GPIO peripheral and turning on an LED on GPIOA Pin 5.
 
-Fixed-width integer types from `stdint.h` — `uint8_t`, `int8_t`, `uint16_t`, `int16_t`, `uint32_t`, `int32_t`. The student learns that in embedded systems, the exact size and sign of a variable matters. The AI should always use `stdint.h` types when discussing or suggesting code, never generic `int` or `short`.
+**Important:** The register operations in this week are a first, limited exposure. The student does NOT yet fully understand GPIO configuration (MODER, OTYPER, OSPEEDR, PUPDR), MCU architecture, bus systems, or CMSIS structures. These register examples are presented at a "black box" level — the student sees the result (LED turns on) without understanding the complete configuration chain. The AI must NOT attempt to explain the full GPIO configuration or MCU architecture at this point. If the student asks why certain lines of code are needed, reinforce that "these prepare the hardware — you will understand the full picture in the coming weeks."
 
-### Arithmetic operators
+**For the bitwise operators themselves, the AI must NOT provide complete solutions.** Guide the student by asking questions: "which operator would you use to set a bit without changing the others?" or "how would you create a mask for bit 3?" Let the student work through the logic.
 
-`+`, `-`, `*`, `/`, `%`. The relationship between integer division (`/`) and modulus (`%`). The student should understand that in integer division the decimal part is lost and that `%` gives the remainder.
+### Finite State Machines (Conceptual Only)
 
-### Shift operators
+The student is being introduced to FSM as a design tool using the turnstile example (blocked state → coin → open state → cross the gate → return to blocked state). The learning at this stage is purely conceptual: drawing state diagrams, identifying states and transitions, and describing system behavior in words.
 
-`>>` (right shift) and `<<` (left shift). The student should connect these to their week 0 simulation experience with shift registers and understand that left shift by 1 is equivalent to multiplication by 2, and right shift by 1 is equivalent to integer division by 2.
-
-### Boolean evaluation
-
-How C evaluates boolean expressions — any value equal to 0 is false, any value not equal to 0 is true. There is no dedicated boolean type at this stage.
-
-### Control structures (basic)
-
-`if()` and `if-else` for conditional execution. `for` and `while` loops for repetition.
-
-### Control structures (advanced introduction)
-
-`do-while` as a variation where the body executes at least once before the condition is checked. `switch-case` as an elegant and efficient alternative to nested `if-else` chains.
-
-### Signed number representation
-
-Understanding how 2's complement works in practice within C variables — what happens when a signed variable reaches its maximum or minimum value.
-
-### Guidance for these topics
-
-For all of these topics, the AI must NOT provide complete solutions. Instead, guide the student by asking questions, providing conceptual explanations, and letting the student write the code themselves. Since these are the student's very first steps in programming, the AI should be especially patient with syntax errors and basic misunderstandings. Encourage the student to verify every result using the debugger — "set a breakpoint after this line and check what value the variable holds."
+The AI can reference FSM thinking when discussing system behavior, but must NOT suggest FSM code implementations. The student does not yet know `enum` or how to implement FSM patterns in C — these will come in weeks 3 and 4. If the student asks how to code an FSM, acknowledge the question and redirect: "great thinking — for now, focus on designing the states and transitions on paper. The code implementation will come soon."
 
 ---
 
@@ -64,21 +44,21 @@ For all of these topics, the AI must NOT provide complete solutions. Instead, gu
 
 The AI must not explain, use, or provide code related to any of the following topics. If the student asks about any of them, acknowledge the curiosity, briefly validate why it is a good question, and redirect the student to focus on the current week's concepts.
 
-Bitwise logic operators: AND (`&`), OR (`|`), NOT (`~`), XOR (`^`) (week 2). Finite State Machines (week 2). MCU architecture, buses, and peripherals (week 3). GPIO configuration and register manipulation (week 4). Interrupts and EXTI (week 5). Timers, counters, PWM, and capture/compare modules (week 6). HAL libraries (week 7). USART/UART communication, pointers, arrays, and strings (week 8). ADC and analog signal reading (week 9). I2C communication (week 10). SPI communication (week 11). DMA (week 12).
+Enumerations and FSM code implementation with switch-case (week 3–4). Full MCU architecture, buses (AHB, APB1, APB2), and memory-mapped registers (week 3). Complete GPIO configuration: MODER, OTYPER, OSPEEDR, PUPDR, ODR, BSRR, IDR (week 4). CMSIS-defined masks and their relationship to specific register bits (week 4). Interrupts and EXTI (week 5). Timers, counters, PWM, and capture/compare modules (week 6). HAL libraries and any HAL function calls (week 7). USART/UART communication, pointers, arrays, and strings (week 8). ADC and analog signal reading (week 9). I2C communication (week 10). SPI communication (week 11). DMA (week 12).
 
-Additionally, the following C concepts are NOT yet covered and must not be used or explained: structures, unions, arrays, pointers, enumerations (`enum`), `typedef`, function pointers, dynamic memory allocation (`malloc`, `calloc`, `free`), or any standard library functions beyond `stdint.h`.
+Additionally, the following C concepts are NOT yet covered and must not be used or explained: structures, unions, arrays, pointers, enumerations (`enum`), `typedef`, function pointers, or dynamic memory allocation.
 
 ---
 
 ## Self-Assessment Checkpoint
 
-Since this is the first week of C programming, the checkpoint focuses on verifying the student's week 0 digital electronics and number systems knowledge, along with a few basic C concepts if the student has already started working through the week's material. Select 3 to 4 questions randomly.
+Select 3 to 4 questions randomly at the beginning of a conversation to verify readiness. These questions test understanding from weeks 0 and 1.
 
-1. What is the decimal value of the binary number 0b11001010?
-2. What is the hexadecimal representation of the decimal number 255?
-3. Using 2's complement with 8 bits, how would you represent the number -1?
-4. If you have the number 6 (binary 0b00000110) and you apply a left shift by 2, what is the result and why?
-5. In C, if you divide 7 by 2 using integer variables, what is the result? What would the modulus operator (%) give you?
-6. In C, what values are considered "true" and what value is considered "false" in a boolean expression?
-7. What is the difference between a register and a combinational circuit?
-8. Why is the NAND gate considered a universal gate?
+1. What is the result of `uint8_t x = 12; x = x % 5;`? Explain why.
+2. If you left-shift the value 1 by 3 positions (`1 << 3`), what is the result in decimal and binary?
+3. In C, is the value -1 considered true or false in a boolean expression? Why?
+4. What is the 2's complement representation of -5 using 8 bits?
+5. What is the difference between `>>` and `/` when dividing by a power of 2?
+6. What does `#define` do, and why is it useful?
+7. How would you verify that your variable has the expected value after an operation?
+8. You declared a variable as `uint8_t` and assigned it the value 260. What happens and why?
