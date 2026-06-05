@@ -1,0 +1,88 @@
+<svg width="680" viewBox="0 0 680 520" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>git fetch vs git pull</title>
+  <desc>Diagram comparing git fetch and git pull, showing how fetch downloads to a staging area while pull downloads and merges directly into the working branch.</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: sans-serif; fill: #2C2C2A; }
+      .th  { font-size: 14px; font-weight: 600; }
+      .ts  { font-size: 12px; font-weight: 400; fill: #5F5E5A; }
+      .teal-box  { fill: #E1F5EE; stroke: #0F6E56; }
+      .amber-box { fill: #FAEEDA; stroke: #854F0B; }
+      .purple-box{ fill: #EEEDFE; stroke: #3C3489; }
+      .bottom-bar{ fill: #F1EFE8; }
+    </style>
+  </defs>
+
+  <!-- Column headers -->
+  <text class="th" x="200" y="36" text-anchor="middle">git fetch</text>
+  <text class="th" x="500" y="36" text-anchor="middle">git pull</text>
+  <line x1="340" y1="20" x2="340" y2="500" stroke="#B4B2A9" stroke-width="1" stroke-dasharray="4 4"/>
+
+  <!-- LEFT SIDE — git fetch -->
+
+  <!-- Remote repo -->
+  <rect class="teal-box" x="80" y="55" width="240" height="56" rx="8" stroke-width="0.5"/>
+  <text class="th" x="200" y="79" text-anchor="middle">Remote repo</text>
+  <text class="ts" x="200" y="97" text-anchor="middle">upstream / origin</text>
+
+  <!-- Arrow: remote → staging -->
+  <line x1="200" y1="111" x2="200" y2="168" stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <text class="ts" x="245" y="144" fill="#0F6E56">download only</text>
+
+  <!-- Remote-tracking branch -->
+  <rect class="amber-box" x="80" y="168" width="240" height="56" rx="8" stroke-width="0.5"/>
+  <text class="th" x="200" y="192" text-anchor="middle">Remote-tracking branch</text>
+  <text class="ts" x="200" y="210" text-anchor="middle">upstream/week-01</text>
+
+  <!-- Inspect labels -->
+  <text class="ts" x="200" y="252" text-anchor="middle">✓ inspect before merging</text>
+  <text class="ts" x="200" y="268" text-anchor="middle">git log upstream/week-01</text>
+
+  <!-- Arrow: staging → local (manual merge) -->
+  <line x1="200" y1="282" x2="200" y2="338" stroke="#BA7517" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+  <text class="ts" x="245" y="314" fill="#854F0B">git merge</text>
+  <text class="ts" x="245" y="330" fill="#854F0B">(your choice)</text>
+
+  <!-- Local working branch -->
+  <rect class="purple-box" x="80" y="338" width="240" height="56" rx="8" stroke-width="0.5"/>
+  <text class="th" x="200" y="362" text-anchor="middle">Local branch</text>
+  <text class="ts" x="200" y="380" text-anchor="middle">week-01 (your code)</text>
+
+  <!-- Safe labels -->
+  <text class="ts" x="200" y="420" text-anchor="middle">✓ your code is untouched</text>
+  <text class="ts" x="200" y="436" text-anchor="middle">until you decide to merge</text>
+
+  <!-- RIGHT SIDE — git pull -->
+
+  <!-- Remote repo -->
+  <rect class="teal-box" x="380" y="55" width="240" height="56" rx="8" stroke-width="0.5"/>
+  <text class="th" x="500" y="79" text-anchor="middle">Remote repo</text>
+  <text class="ts" x="500" y="97" text-anchor="middle">upstream / origin</text>
+
+  <!-- Combined arrow: remote → local -->
+  <line x1="500" y1="111" x2="500" y2="338" stroke="#534AB7" stroke-width="2" marker-end="url(#arrow)"/>
+  <text class="ts" x="545" y="185" fill="#3C3489">step 1:</text>
+  <text class="ts" x="545" y="201" fill="#3C3489">fetch</text>
+  <text class="ts" x="545" y="265" fill="#3C3489">step 2:</text>
+  <text class="ts" x="545" y="281" fill="#3C3489">merge</text>
+  <text class="ts" x="545" y="297" fill="#3C3489">automatic</text>
+
+  <!-- Local working branch -->
+  <rect class="purple-box" x="380" y="338" width="240" height="56" rx="8" stroke-width="0.5"/>
+  <text class="th" x="500" y="362" text-anchor="middle">Local branch</text>
+  <text class="ts" x="500" y="380" text-anchor="middle">week-01 (your code)</text>
+
+  <!-- Warning labels -->
+  <text class="ts" x="500" y="420" text-anchor="middle">⚠ changes merged immediately</text>
+  <text class="ts" x="500" y="436" text-anchor="middle">no chance to inspect first</text>
+
+  <!-- Bottom rule -->
+  <rect class="bottom-bar" x="40" y="462" width="600" height="44" rx="8"/>
+  <text class="ts" x="340" y="480" text-anchor="middle">Rule for this course: always use</text>
+  <text class="th" x="340" y="497" text-anchor="middle">git fetch → inspect → git merge</text>
+
+</svg>

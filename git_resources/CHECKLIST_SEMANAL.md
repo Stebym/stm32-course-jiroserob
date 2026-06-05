@@ -4,6 +4,16 @@
 
 ---
 
+## Regla de oro
+
+Cada vez que necesites traer contenido desde el repositorio del profesor, sigue siempre este orden de tres pasos:
+
+**`git fetch` → inspeccionar → `git merge`**
+
+Nunca uses `git pull` directamente. La diferencia es importante: `git fetch` descarga los cambios del repositorio remoto pero los deja en un área de espera, sin tocar tu código. Esto te da la oportunidad de revisar qué llegó antes de integrarlo. `git pull` hace las dos cosas de forma automática e inmediata, sin darte esa pausa de revisión. En un proyecto donde tu código es valioso e irremplazable, siempre quieres saber qué estás integrando antes de que suceda.
+
+---
+
 ## Pasos a seguir
 
 **Paso 1 — Guarda y confirma tu trabajo actual.**
@@ -62,11 +72,14 @@ El procedimiento tiene dos partes: primero actualizas la rama afectada, y luego 
 
 **Parte A — Actualiza la rama que el profesor corrigió.**
 
-En este ejemplo el profesor corrigió `week-00`, pero el procedimiento es idéntico para cualquier otra semana:
+En este ejemplo el profesor corrigió `week-00`, pero el procedimiento es idéntico para cualquier otra semana. Recuerda la regla de oro: fetch primero, luego inspecciona, luego merge.
 
 ```bash
 # Descarga los cambios más recientes del repositorio del profesor
 git fetch upstream week-00
+
+# Revisa qué cambió antes de integrarlo
+git log upstream/week-00 --oneline
 
 # Cambia a la rama que fue corregida
 git checkout week-00
