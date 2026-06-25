@@ -1,0 +1,2 @@
+# Fuerza "all" como goal por defecto antes de que los subdir.mk definan "clean"
+.DEFAULT_GOAL := all
