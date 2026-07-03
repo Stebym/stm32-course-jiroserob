@@ -1,0 +1,254 @@
+==============================================================
+ DOCUMENTACION DE LA IMPLEMENTACION DEL EQUIPO - TAREA 3
+ Taller V (2.0) - 1er Semestre 2026
+ Universidad Nacional de Colombia - Sede Medellin
+ Profesor: Nerio Andres Montoya Giraldo, PhD.
+ Estudiante: Jimmy Stebym Rosero Barrera
+ Tarjeta: NUCLEO-F411RE (STM32F411RETx, Cortex-M4)
+ Reloj: HSI interno, 16 MHz (sin PLL, valor por defecto de fabrica)
+==============================================================
+
+--------------------------------------------------------------
+1. OBJETIVO DEL EQUIPO
+--------------------------------------------------------------
+Controlar los tres canales de un LED RGB con tres fuentes de
+control totalmente distintas, demostrando que perifericos muy
+diferentes del microcontrolador pueden converger en el mismo
+tipo de resultado (variar el ancho de pulso de una señal PWM):
+
+    - Canal ROJO  -> controlado por teclado via puerto serial (UART, Rx por interrupcion)
+    - Canal VERDE -> controlado por un encoder rotativo (Timer en modo encoder, sin interrupciones)
+    - Canal AZUL  -> controlado por un potenciometro (ADC de 12 bits, disparado por evento de Timer)
+
+Todo el programa corre dentro de una maquina de estados finita
+(FSM) de 4 estados, sin usar HAL Cube ni ayudas graficas: toda
+la configuracion de perifericos se hizo a mano con las librerias
+HAL de ST.
+
+--------------------------------------------------------------
+2. MAPA DE PINES
+--------------------------------------------------------------
+ Pin   Funcion              Modo                  Notas
+ ---   -------------------- --------------------- ------------------------------
+ PA0   TIM2_CH1 (Encoder A) AF1 + Pull-up          Cuadratura, filtro IC=15
+ PA1   TIM2_CH2 (Encoder B) AF1 + Pull-up          Cuadratura, filtro IC=15
+ PA2   USART2_TX            AF7                    Hacia el PC (ST-Link VCP), sin pull
+ PA3   USART2_RX            AF7 + Pull-up          Pull-up OBLIGATORIO (lo pidio el
+                                                    profe en el correo del 20-jun-2026:
+                                                    evita flancos falsos de start-bit
+                                                    cuando la linea esta en reposo)
+ PA4   ADC1_IN4             Analogico              Entrada del potenciometro
+ PA5   GPIO salida          Push-Pull              LED de blinky (led propio de la Nucleo)
+ PA6   TIM3_CH1 (PWM Rojo)  AF2                     2 kHz, 0-999 ticks
+ PA7   TIM3_CH2 (PWM Verde) AF2                     2 kHz, 0-999 ticks
+ PA8   MCO1                 AF0                    BONO: saca el reloj interno (HSI,
+                                                    16 MHz) para verificarlo con
+                                                    osciloscopio
+ PB0   TIM3_CH3 (PWM Azul)  AF2                     2 kHz, 0-999 ticks
+ PH1   GPIO salida          Push-Pull              LED espejo del blinky en la
+                                                    placa auxiliar de la caja de kit
+
+--------------------------------------------------------------
+3. PERIFERICOS Y TIMERS USADOS (y por que se eligio cada uno)
+--------------------------------------------------------------
+
+3.1 TIM10 - Blinky (independiente, 5 pts)
+    - Basico de 16 bits en APB2, no comparte proposito con nada mas.
+    - Prescaler 16000-1, Periodo 500-1  => interrupcion cada 500 ms
+      (16 MHz / 16000 = 1 kHz de tick, /500 = 2 Hz => toggle cada 0.5 s)
+    - Cada disparo alterna PA5 (led de la Nucleo) y PH1 (led espejo
+      de la placa auxiliar) desde HAL_TIM_PeriodElapsedCallback().
+    - Prioridad NVIC alta (1,0) para que nunca se atrase por culpa
+      del serial o del ADC.
+
+3.2 TIM2 - Encoder rotativo (10 pts)
+    - Modo TIM_ENCODERMODE_TI12 (cuadratura completa en ambos
+      flancos de ambos canales -> 4 cuentas por detent mecanico).
+    - Sin ninguna interrupcion habilitada: el conteo lo hace el
+      hardware solo, la FSM simplemente LEE el registro CNT en
+      cada ciclo (esto es justo lo que pidio el profe en su correo:
+      "no es necesario activar ninguna interrupcion").
+    - Filtro de entrada IC1Filter/IC2Filter = 15 para eliminar
+      rebotes mecanicos de la perilla.
+    - Rango util: ENCODER_MAX = 396 cuentas crudas = 99 clics
+      mecanicos (396 / 4). Se eligio asi para que cada clic mueva
+      el PWM en 999/99 ~ 10 unidades, es decir ~1% de la escala
+      (~33 mV sobre 3.3 V) -- la misma resolucion que el profesor
+      mostro en su video de demostracion.
+    - La direccion de giro (CW/CCW) se lee directo del bit DIR del
+      registro CR1 del timer con la macro
+      __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim2), sin necesidad de
+      comparar cuentas a mano.
+    - El contador de 32 bits (Period = 0xFFFFFFFF) permite detectar
+      un giro CCW por debajo de 0 (el hardware da la vuelta a
+      0xFFFFFFFF); el codigo detecta ese wrap-around (cast a
+      int32_t da un numero negativo) y lo clampa de vuelta a 0.
+
+3.3 TIM3 - PWM de los 3 colores (parte del punto de PWM, incluido
+    en los 3 items de Rx/Encoder/ADC ya que cada canal se controla
+    desde un origen distinto)
+    - 3 canales en modo PWM1 (TIM_CHANNEL_1/2/3 -> PA6/PA7/PB0).
+    - Prescaler 8-1, Periodo 1000-1 => reloj de timer a 2 MHz,
+      dividido entre 1000 pasos = 2.000 kHz exactos (dentro del
+      rango 1-5 kHz que pide la rubrica).
+    - Resolucion de 1000 pasos (0 a 999) por canal.
+    - Polaridad HIGH: a mayor valor de CCR, mas tiempo en alto,
+      mas brillo (LED comun-catodo: el pin alto enciende).
+
+3.4 TIM4 - Disparador del ADC (10 pts, sin interrupcion del timer)
+    - Configurado como timer basico con un canal en modo PWM1
+      unicamente para generar el flanco de disparo (no se usa la
+      señal fisicamente, solo el evento interno).
+    - Prescaler 16000-1 (tick de 1 ms), Periodo 20-1 => evento
+      cada 20 ms (50 Hz), cumpliendo el minimo de muestreo que
+      pide la rubrica.
+    - El ADC1 esta configurado con
+      ExternalTrigConv = ADC_EXTERNALTRIGCONV_T4_CC4.
+      NOTA IMPORTANTE: en el STM32F411, TIM4 NO tiene una salida
+      TRGO valida como fuente de disparo del ADC1 (se verifico en
+      stm32f4xx_hal_adc.h: la unica opcion de TIM4 es T4_CC4). Las
+      unicas fuentes con TRGO disponible son TIM2 y TIM3, y ambos
+      ya estaban ocupados (encoder y PWM). Por eso se uso el evento
+      de comparacion CC4 de TIM4, que logra exactamente el mismo
+      objetivo que pide el profesor en su correo: un disparo
+      automatico del ADC sin necesitar ninguna interrupcion del
+      timer (TIM4 nunca se arranca con _IT, solo con
+      HAL_TIM_PWM_Start en el canal 4).
+    - TIM4 nunca genera una interrupcion propia; el unico IRQ
+      relacionado con esta cadena es el del ADC (ver 3.5).
+
+3.5 ADC1 - Lectura del potenciometro (10 pts)
+    - Resolucion de 12 bits, canal 4 (PA4), disparo por evento
+      externo (ver 3.4), un solo canal, sin DMA.
+    - Se arranca con HAL_ADC_Start_IT(): cada conversion completa
+      genera una interrupcion y llama a
+      HAL_ADC_ConvCpltCallback(), que:
+        1. Lee el valor crudo (0-4095).
+        2. Aplica una zona muerta: si valor_adc < 100 cuentas
+           (~81 mV), fuerza pwm_azul = 0. Esto es necesario porque
+           el circuito tiene una resistencia de 220 ohm (codigo de
+           colores rojo-rojo-cafe) entre la pata inferior del
+           potenciometro y tierra, para evitar un corto cuando el
+           pote se lleva al minimo. Esa resistencia deja un piso
+           de tension de unos 35-40 mV que sin la zona muerta se
+           veria como "ruido" en el PWM azul.
+        3. Escala el resto del rango (100-4095) a 0-999 de forma
+           proporcional para el PWM.
+        4. Vuelve a armar la conversion con HAL_ADC_Start_IT()
+           para el siguiente disparo de TIM4.
+
+3.6 USART2 - Comunicacion serial (10 pts, Rx por interrupcion)
+    - Asincrono puro (handle UART, no USART): 115200 baudios,
+      8N1, sin control de flujo. Esto es exactamente lo que aclaro
+      el profesor en su correo del 1-jul-2026 (usar el handle UART
+      asincrono, no el USART sincrono, para que la recepcion no se
+      quede "pegada" esperando una señal de reloj que nunca llega).
+    - Transmision (Tx): por polling/bloqueante, con
+      HAL_UART_Transmit() -- tal como permite la rubrica.
+    - Recepcion (Rx): por interrupcion obligatoria, con
+      HAL_UART_Receive_IT() de 1 byte, que se vuelve a rearmar
+      dentro de HAL_UART_RxCpltCallback() cada vez que llega un
+      caracter.
+    - Teclas reconocidas para el canal ROJO:
+        '+'      -> sube el PWM en 10 unidades (satura en 999)
+        '-'      -> baja el PWM en 10 unidades (satura en 0)
+        '0'      -> apaga el canal rojo (PWM = 0)
+        '1'      -> lo manda directo al 100% (PWM = 999)
+        'm'/'M'  -> tecla de cortesia (no exigida por la rubrica):
+                    manda el canal rojo al 50% (PWM = 500)
+      Cualquier otra tecla no reconocida (por ejemplo ENTER) hace
+      que el equipo reimprima el menu de bienvenida por la
+      terminal -- ver seccion 5.
+
+--------------------------------------------------------------
+4. MAQUINA DE ESTADOS FINITA (FSM)
+--------------------------------------------------------------
+El programa nunca bloquea el main() esperando nada; toda la
+logica vive dentro de un ciclo infinito con 4 estados que se
+recorren uno tras otro, siempre en el mismo orden:
+
+    ESTADO_LEER_ADC
+        -> el valor del pote ya lo actualizo el callback del ADC
+           por interrupcion, aca solo se avanza de estado.
+    ESTADO_LEER_ENCODER
+        -> lee CNT de TIM2, lo clampa entre 0 y ENCODER_MAX,
+           calcula pwm_verde y clics_encoder.
+    ESTADO_VERIFICAR_SERIAL
+        -> si el flag serial_nuevo esta en 1 (lo levanto la ISR
+           del USART), procesa la tecla y actualiza pwm_rojo.
+    ESTADO_ESCRIBIR_PWM
+        -> aplica los 3 valores de pwm_rojo/verde/azul a los
+           registros de comparacion de TIM3 (__HAL_TIM_SET_COMPARE)
+        -> si algo cambio desde la ultima vez (clics del encoder,
+           pwm rojo, o el azul con un umbral de ruido de 4 cuentas)
+           arma un reporte de 3 lineas y lo transmite por UART.
+
+--------------------------------------------------------------
+5. MENU DE BIENVENIDA Y REPORTE POR TERMINAL (mejora propia)
+--------------------------------------------------------------
+Estas dos cosas no las pide la rubrica, pero se agregaron para
+que la evaluacion en vivo con el profesor sea mas clara:
+
+5.1 Menu de bienvenida
+    Al arrancar la tarjeta se manda un mensaje con las teclas
+    disponibles. Como el equipo arranca apenas se energiza (antes
+    de que el usuario alcance a abrir la terminal serial en la
+    PC), el mensaje se reenvia automaticamente:
+        - Cada 30 segundos, como recordatorio pasivo.
+        - Al presionar cualquier tecla que no sea una de las 5
+          reconocidas (por ejemplo ENTER), como reimpresion bajo
+          demanda.
+
+5.2 Reporte de estado (solo se manda si algo cambio)
+    Formato de 3 lineas, una por canal, mostrando la fuente de
+    control, el valor fisico/crudo y el resultado en PWM:
+
+        UART Rojo    :  50 clics     -> PWM R = 500 ( 50%)
+        Encoder Verde: CW,  13 clics -> PWM G = 131 ( 13%)
+        ADC Azul     : 4095 raw = 3300 mV -> PWM B = 999 (100%)
+
+    - "clics" del rojo se recalculan siempre desde el valor real
+      del PWM (pwm_rojo/10 redondeado), nunca se guardan aparte;
+      asi, sin importar por cual tecla se llego a un valor (por
+      ejemplo '1' en un solo toque), el numero de clics mostrado
+      siempre es consistente con el PWM real.
+    - La direccion del encoder (CW/CCW) se lee directo del
+      hardware (registro DIR de TIM2), no se infiere.
+    - El azul muestra el dato crudo del ADC Y su equivalente en
+      milivoltios, para poder compararlo directo con lo que marca
+      un multimetro en el pin.
+
+--------------------------------------------------------------
+6. HARDWARE EXTERNO (LED RGB y potenciometro)
+--------------------------------------------------------------
+    - Resistencias en serie con el LED RGB (los 3 colores):
+      codigo de colores cafe-negro-rojo = 1 kOhm.
+      Con el pin del MCU en alto (~3.3 V) y tension directa tipica
+      de un LED RGB (rojo ~2.0 V, verde/azul ~3.0-3.2 V), la
+      corriente estimada es:
+        Rojo:        (3.3-2.0)/1k =~ 1.3 mA
+        Verde/Azul:  (3.3-3.0)/1k =~ 0.3 mA
+      Corriente muy por debajo del limite de la rubrica y del
+      maximo de un pin GPIO del STM32F411 (25 mA).
+    - Resistencia entre la pata inferior del potenciometro (20k)
+      y tierra: codigo de colores rojo-rojo-cafe = 220 Ohm.
+      Cumple la misma funcion que el profesor explico en su video
+      (evitar un corto cuando el pote se lleva al minimo), aunque
+      con un valor mas grande que el que uso el (15 Ohm). El
+      efecto es un pequeño piso de tension en el minimo, que la
+      zona muerta del ADC (seccion 3.5) ya absorbe.
+
+--------------------------------------------------------------
+7. BONO OPCIONAL: SALIDA DE RELOJ POR MCO1 (5 pts)
+--------------------------------------------------------------
+    HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSI, RCC_MCODIV_1);
+
+    Saca el reloj interno HSI (16 MHz) sin dividir por el pin PA8.
+    Verificacion: conectar la punta del osciloscopio a PA8 (GND
+    del osciloscopio al GND de la Nucleo) y se debe observar una
+    onda cuadrada estable de 16 MHz.
+
+    [ ESPACIO PARA PEGAR CAPTURA DEL OSCILOSCOPIO ]
+
+
+==============================================================
