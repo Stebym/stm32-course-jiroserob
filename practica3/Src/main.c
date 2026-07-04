@@ -29,12 +29,24 @@
 // 396 = 99 clics mecanicos x4 cuentas por clic (encoder en cuadratura)
 // asi cada clic mueve el pwm 999/99 = 1.0% ~ 33 mV, igual a la resolucion
 // que el profe mostro en el video de la tarea
+
+
 #define ENCODER_MAX  396U
+
+// tiempo minimo entre transmisiones del reporte (ms); sin esto, girar el pote
+// despacio inunda la terminal con una linea nueva cada 20 ms
+#define REPORTE_INTERVALO_MIN_MS  150U
+
 
 // -----------------------------------------------------------------------
 // VARIABLES GLOBALES
 // -----------------------------------------------------------------------
+
+
+
 // handles de la hal manuales de los perifericos
+
+
 TIM_HandleTypeDef  htim2;   // encoder rotativo
 TIM_HandleTypeDef  htim3;   // pwm de los 3 colores
 TIM_HandleTypeDef  htim4;   // trigger del adc cada 20 ms
@@ -57,6 +69,15 @@ uint32_t pwm_verde_ant = 0;
 uint32_t pwm_azul_ant  = 0;
 int32_t  clics_encoder_ant = 0;    // para detectar cambios en los clics de la perilla
 
+// direccion del ultimo giro REAL del potenciometro (por encima del ruido), se
+// mantiene aunque el pote este quieto, igual que el bit DIR del encoder en hardware
+// 0 = aun no se ha movido, 1 = CW/derecha (sube), -1 = CCW/izquierda (baja)
+volatile int8_t pot_direccion = 0;
+
+// marca de tiempo del ultimo reporte enviado, para limitar la frecuencia de
+// transmision (ver REPORTE_INTERVALO_MIN_MS)
+uint32_t tick_ultimo_reporte = 0;
+
 // flag que levanta la ISR cuando llega un byte por usart
 volatile uint8_t serial_nuevo = 0;
 
@@ -73,9 +94,13 @@ typedef enum {
 
 FSM_Estado_t estado_fsm = ESTADO_LEER_ADC;
 
+
 // -----------------------------------------------------------------------
 // PROTOTIPOS
 // -----------------------------------------------------------------------
+
+
+
 void Inicializar_Hardware(void);
 void GPIO_Init_Manual(void);
 void TIM2_Encoder_Init(void);
@@ -90,6 +115,8 @@ void Enviar_Menu_Bienvenida(void);
 // -----------------------------------------------------------------------
 // LOGICA PRINCIPAL
 // -----------------------------------------------------------------------
+
+
 int main(void)
 {
     // iniciamos el core tick a 1 ms latency flash nvic
@@ -195,19 +222,36 @@ int main(void)
                 __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_2, pwm_verde);
                 __HAL_TIM_SET_COMPARE(&htim3, TIM_CHANNEL_3, pwm_azul);
 
-                // calculo absoluto del cambio del adc para evitar ruido termico en el cable
-                int32_t diff_azul = (int32_t)pwm_azul - (int32_t)pwm_azul_ant;
-                if (diff_azul < 0) {
-                    diff_azul = -diff_azul;
+                // diferencia con signo para saber hacia donde se movio el pote, y su
+                // valor absoluto para el umbral de ruido de siempre
+                int32_t diff_azul_signo = (int32_t)pwm_azul - (int32_t)pwm_azul_ant;
+                int32_t diff_azul = (diff_azul_signo < 0) ? -diff_azul_signo : diff_azul_signo;
+
+                // la direccion del pote solo se actualiza si el movimiento fue real
+                // (mismo umbral de 4 cuentas que ya se usaba para filtrar ruido), y se
+                // queda guardada aunque el pote no se mueva en los ciclos siguientes
+                if (diff_azul > 4) {
+                    pot_direccion = (diff_azul_signo > 0) ? 1 : -1;
                 }
 
                 // TRANSMISION AUTOMATICA REACTIVA
-                // se dispara si cambia el pwm rojo, el encoder, o el azul (pote)
-                if ((clics_encoder != clics_encoder_ant) ||
-                    (pwm_rojo != pwm_rojo_ant) || (diff_azul > 4))
+                // se dispara si cambia el pwm rojo, el encoder, o el azul (pote),
+                // pero nunca mas seguido que REPORTE_INTERVALO_MIN_MS: sin este
+                // limite, girar el pote despacio manda un bloque nuevo cada 20 ms
+                // (un scroll ilegible en la terminal)
+                uint8_t hay_cambio = (clics_encoder != clics_encoder_ant) ||
+                                     (pwm_rojo != pwm_rojo_ant) || (diff_azul > 4);
+                uint32_t ahora = HAL_GetTick();
+
+                if (hay_cambio && ((ahora - tick_ultimo_reporte) >= REPORTE_INTERVALO_MIN_MS))
                 {
                     // direccion real leida del registro del timer, no hay que inferirla comparando cuentas
                     const char *dir_encoder = __HAL_TIM_IS_TIM_COUNTING_DOWN(&htim2) ? "CCW" : "CW";
+
+                    // direccion del pote inferida en software (ver arriba); "--" mientras no se haya
+                    // movido todavia desde el arranque
+                    const char *dir_pot = (pot_direccion > 0) ? "CW" :
+                                          (pot_direccion < 0) ? "CCW" : "--";
 
                     // conversion de la lectura cruda del pote a milivoltios reales (escala 3.3 V)
                     uint32_t adc_mv = (valor_adc * 3300UL) / 4095UL;
@@ -218,15 +262,18 @@ int main(void)
                     // a punta de '+'), listo para bajar con '-' de forma consistente
                     uint32_t clics_rojo = (pwm_rojo + 5U) / 10U;
 
-                    char buffer_tx[200];
-                    // una linea por canal: fuente de control, valor crudo/fisico y el pwm resultante
-                    sprintf(buffer_tx,
-                            "UART Rojo    : %3lu clics     -> PWM R = %3lu (%3lu%%)\r\n"
-                            "Encoder Verde: %s, %2ld clics    -> PWM G = %3lu (%3lu%%)\r\n"
-                            "ADC Azul     : %4lu raw = %4lu mV -> PWM B = %3lu (%3lu%%)\r\n\r\n",
+                    // un renglon por canal, con encabezado; hace scroll normal (sin
+                    // ANSI), pero el limite de REPORTE_INTERVALO_MIN_MS de arriba ya
+                    // evita que se dispare un bloque nuevo en cada muestra del ADC
+                    char buffer_tx[260];
+                    snprintf(buffer_tx, sizeof(buffer_tx),
+                            "=== ESTADO EN VIVO ===\r\n"
+                            "  Rojo  [UART]    : %3lu clics       -> PWM = %3lu (%3lu%%)\r\n"
+                            "  Verde [Encoder] : %-3s  %2ld clics  -> PWM = %3lu (%3lu%%)\r\n"
+                            "  Azul  [ADC]     : %-3s %4lu raw = %4lu mV -> PWM = %3lu (%3lu%%)\r\n\r\n",
                             clics_rojo, pwm_rojo, (pwm_rojo * 100UL) / 999UL,
                             dir_encoder, clics_encoder, pwm_verde, (pwm_verde * 100UL) / 999UL,
-                            valor_adc, adc_mv, pwm_azul, (pwm_azul * 100UL) / 999UL);
+                            dir_pot, valor_adc, adc_mv, pwm_azul, (pwm_azul * 100UL) / 999UL);
 
                     // transmite de inmediato por polling asincrono
                     HAL_UART_Transmit(&huart2, (uint8_t*)buffer_tx, strlen(buffer_tx), 100);
@@ -236,6 +283,7 @@ int main(void)
                     pwm_verde_ant      = pwm_verde;
                     pwm_azul_ant       = pwm_azul;
                     clics_encoder_ant  = clics_encoder;
+                    tick_ultimo_reporte = ahora;
                 }
 
                 estado_fsm = ESTADO_LEER_ADC;
@@ -259,6 +307,8 @@ int main(void)
 // -----------------------------------------------------------------------
 // RUTEACIÓN DE PINES MANUAL
 // -----------------------------------------------------------------------
+
+
 void GPIO_Init_Manual(void)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -332,6 +382,8 @@ void GPIO_Init_Manual(void)
 // -----------------------------------------------------------------------
 // INICIALISACION DE TIMER ENCODER TIM2
 // -----------------------------------------------------------------------
+
+
 void TIM2_Encoder_Init(void)
 {
     TIM_Encoder_InitTypeDef sConfig = {0};
@@ -363,6 +415,9 @@ void TIM2_Encoder_Init(void)
 // -----------------------------------------------------------------------
 // INICIALISACION DE TIMER PWM RGB TIM3 (2 kHz)
 // -----------------------------------------------------------------------
+
+
+
 void TIM3_PWM_Init(void)
 {
     TIM_OC_InitTypeDef sConfigOC = {0};
@@ -389,6 +444,9 @@ void TIM3_PWM_Init(void)
 // -----------------------------------------------------------------------
 // INICIALISACION DE TIMER DISPARADOR TIM4 (20 ms)
 // -----------------------------------------------------------------------
+
+
+
 void TIM4_Trigger_Init(void)
 {
     TIM_OC_InitTypeDef sConfigOC = {0};
@@ -413,6 +471,9 @@ void TIM4_Trigger_Init(void)
 // -----------------------------------------------------------------------
 // INICIALISACION DE TIMER BLINKY TIM10 (500 ms)
 // -----------------------------------------------------------------------
+
+
+
 void TIM10_Blinky_Init(void)
 {
     __HAL_RCC_TIM10_CLK_ENABLE();
@@ -433,6 +494,8 @@ void TIM10_Blinky_Init(void)
 // -----------------------------------------------------------------------
 // INICIALISACION DEL MODULO ANALOGO ADC1
 // -----------------------------------------------------------------------
+
+
 void ADC1_Init_Manual(void)
 {
     ADC_ChannelConfTypeDef sConfig = {0};
@@ -506,8 +569,8 @@ void Enviar_Menu_Bienvenida(void)
             " Control LED RGB (PWM 2kHz, 0-999 ticks)\r\n"
             " [COMANDOS DEL TECLADO]\r\n"
             "   ROJO  [serial]   : '+'=+1  '-'=-1  '0'=off  '1'=100%  'm'=50%\r\n"
-            "   VERDE [encoder]  : CW=+1   CCW=-1                       \r\n"
-            "   AZUL  [ADC]      : potenciometro -> duty automatico     \r\n"
+            "   VERDE [encoder]  : CW(der)=+1  CCW(izq)=-1               \r\n"
+            "   AZUL  [ADC]      : pote -> duty automatico, indica CW/CCW\r\n"
             "   (cualquier otra tecla reimprime este menu)              \r\n"
             " Este menu se reenvia solo cada 30 s como recordatorio\r\n"
             "==========================================================\r\n\r\n";

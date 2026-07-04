@@ -199,13 +199,34 @@ que la evaluacion en vivo con el profesor sea mas clara:
           reconocidas (por ejemplo ENTER), como reimpresion bajo
           demanda.
 
-5.2 Reporte de estado (solo se manda si algo cambio)
-    Formato de 3 lineas, una por canal, mostrando la fuente de
-    control, el valor fisico/crudo y el resultado en PWM:
+5.2 Reporte de estado en vivo (solo se manda si algo cambio)
+    Al inicio disparaba un bloque de lineas por CADA cambio
+    detectado, incluyendo cada muestra del ADC (cada 20 ms) al
+    girar el pote despacio -- eso inundaba la terminal con scroll
+    ilegible. Se probaron dos soluciones antes de esta version:
+    un "dashboard" con codigos de escape ANSI (subir el cursor y
+    borrar antes de reescribir) que CoolTerm no interpreta (los
+    mostraba como texto literal en vez de mover el cursor), y una
+    version de una sola linea sobreescrita con "\r" que funcionaba
+    pero se veia menos clara que el formato original de un renglon
+    por canal. La version final combina lo mejor de ambas:
 
-        UART Rojo    :  50 clics     -> PWM R = 500 ( 50%)
-        Encoder Verde: CW,  13 clics -> PWM G = 131 ( 13%)
-        ADC Azul     : 4095 raw = 3300 mV -> PWM B = 999 (100%)
+    a) Limite de frecuencia: el reporte nunca se transmite mas
+       seguido que cada REPORTE_INTERVALO_MIN_MS = 150 ms, sin
+       importar cuantos cambios reales ocurran mientras tanto
+       (el ultimo estado disponible siempre queda reflejado en
+       el siguiente envio permitido). Esto es lo que evita el
+       scroll ilegible sin necesitar ANSI ni sobreescritura.
+    b) Formato de encabezado + un renglon por canal (como el
+       original), que hace scroll normal pero ya no se dispara
+       en cada muestra del ADC gracias al limite anterior.
+
+    Formato:
+
+        === ESTADO EN VIVO ===
+          Rojo  [UART]    : 100 clics       -> PWM = 100 (100%)
+          Verde [Encoder] : CCW  99 clics  -> PWM = 100 (100%)
+          Azul  [ADC]     : CCW 4095 raw = 3300 mV -> PWM = 999 (100%)
 
     - "clics" del rojo se recalculan siempre desde el valor real
       del PWM (pwm_rojo/10 redondeado), nunca se guardan aparte;
@@ -214,9 +235,15 @@ que la evaluacion en vivo con el profesor sea mas clara:
       siempre es consistente con el PWM real.
     - La direccion del encoder (CW/CCW) se lee directo del
       hardware (registro DIR de TIM2), no se infiere.
-    - El azul muestra el dato crudo del ADC Y su equivalente en
-      milivoltios, para poder compararlo directo con lo que marca
-      un multimetro en el pin.
+    - La direccion del potenciometro NO existe en hardware (un
+      ADC solo entrega una posicion absoluta, no un sentido de
+      giro), asi que se infiere en software: se compara cada
+      lectura nueva contra la anterior y, si el cambio supera el
+      mismo umbral de 4 cuentas que ya se usaba para filtrar
+      ruido, se guarda el signo de esa diferencia como la
+      direccion vigente. Esa direccion queda "pegada" (igual que
+      el bit DIR del timer) hasta el siguiente giro real, aunque
+      el pote se quede quieto varios ciclos.
 
 --------------------------------------------------------------
 6. HARDWARE EXTERNO (LED RGB y potenciometro)

@@ -29,12 +29,20 @@
 // 396 = 99 clics mecanicos x4 cuentas por clic (encoder en cuadratura)
 // asi cada clic mueve el pwm 999/99 = 1.0% ~ 33 mV, igual a la resolucion
 // que el profe mostro en el video de la tarea
+
+
 #define ENCODER_MAX  396U
+
 
 // -----------------------------------------------------------------------
 // VARIABLES GLOBALES
 // -----------------------------------------------------------------------
+
+
+
 // handles de la hal manuales de los perifericos
+
+
 TIM_HandleTypeDef  htim2;   // encoder rotativo
 TIM_HandleTypeDef  htim3;   // pwm de los 3 colores
 TIM_HandleTypeDef  htim4;   // trigger del adc cada 20 ms
@@ -73,9 +81,13 @@ typedef enum {
 
 FSM_Estado_t estado_fsm = ESTADO_LEER_ADC;
 
+
 // -----------------------------------------------------------------------
 // PROTOTIPOS
 // -----------------------------------------------------------------------
+
+
+
 void Inicializar_Hardware(void);
 void GPIO_Init_Manual(void);
 void TIM2_Encoder_Init(void);
@@ -90,6 +102,8 @@ void Enviar_Menu_Bienvenida(void);
 // -----------------------------------------------------------------------
 // LOGICA PRINCIPAL
 // -----------------------------------------------------------------------
+
+
 int main(void)
 {
     // iniciamos el core tick a 1 ms latency flash nvic
@@ -259,6 +273,8 @@ int main(void)
 // -----------------------------------------------------------------------
 // RUTEACIÓN DE PINES MANUAL
 // -----------------------------------------------------------------------
+
+
 void GPIO_Init_Manual(void)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -332,6 +348,8 @@ void GPIO_Init_Manual(void)
 // -----------------------------------------------------------------------
 // INICIALISACION DE TIMER ENCODER TIM2
 // -----------------------------------------------------------------------
+
+
 void TIM2_Encoder_Init(void)
 {
     TIM_Encoder_InitTypeDef sConfig = {0};
@@ -363,6 +381,9 @@ void TIM2_Encoder_Init(void)
 // -----------------------------------------------------------------------
 // INICIALISACION DE TIMER PWM RGB TIM3 (2 kHz)
 // -----------------------------------------------------------------------
+
+
+
 void TIM3_PWM_Init(void)
 {
     TIM_OC_InitTypeDef sConfigOC = {0};
@@ -389,6 +410,9 @@ void TIM3_PWM_Init(void)
 // -----------------------------------------------------------------------
 // INICIALISACION DE TIMER DISPARADOR TIM4 (20 ms)
 // -----------------------------------------------------------------------
+
+
+
 void TIM4_Trigger_Init(void)
 {
     TIM_OC_InitTypeDef sConfigOC = {0};
@@ -413,6 +437,9 @@ void TIM4_Trigger_Init(void)
 // -----------------------------------------------------------------------
 // INICIALISACION DE TIMER BLINKY TIM10 (500 ms)
 // -----------------------------------------------------------------------
+
+
+
 void TIM10_Blinky_Init(void)
 {
     __HAL_RCC_TIM10_CLK_ENABLE();
@@ -433,6 +460,8 @@ void TIM10_Blinky_Init(void)
 // -----------------------------------------------------------------------
 // INICIALISACION DEL MODULO ANALOGO ADC1
 // -----------------------------------------------------------------------
+
+
 void ADC1_Init_Manual(void)
 {
     ADC_ChannelConfTypeDef sConfig = {0};
