@@ -3,20 +3,173 @@
  * @file    : main.c
  * @author  : Jimmy Stebym Rosero Barrera
  * @brief   : Tarea 3 - Control de LED RGB con FSM, ADC, Encoder y UART asincrono
- * Nucleo-F411RE | Reloj HSI interno 16 MHz
+ * Taller V (2.0) - Universidad Nacional de Colombia, sede Medellin
+ * Profesor: Nerio Andres Montoya Giraldo, PhD.
+ * Nucleo-F411RE (STM32F411RETx) | Reloj HSI interno 16 MHz, sin PLL
  *
- * Pin   Funcion              Modo
- * PA0   TIM2_CH1  Encoder A  AF1 + PullUp
- * PA1   TIM2_CH2  Encoder B  AF1 + PullUp
- * PA2   UART2_TX  Serial PC  AF7
- * PA3   UART2_RX  Serial PC  AF7 + PullUp obligatorio segun rubrica
- * PA4   ADC1_IN4  Pot        Analogico
- * PA5   LED Blinky Nucleo    Salida PP
- * PA6   TIM3_CH1  PWM Rojo   AF2
- * PA7   TIM3_CH2  PWM Verde  AF2
- * PA8   MCO1 16MHz           AF0 bono osciloscopio puntos extra
- * PB0   TIM3_CH3  PWM Azul   AF2
- * PH1   LED2 board auxiliar  Salida PP
+ * ------------------------------------------------------------------------
+ * QUE HACE ESTE PROGRAMA.
+ * ------------------------------------------------------------------------
+ * Un LED RGB tiene 3 colores (rojo, verde, azul) y cada uno se controla con
+ * un PWM: entre mas tiempo esta "encendido" dentro de cada ciclo (mayor
+ * duty cycle), mas brillante se ve ese color. La idea de la tarea es mover
+ * cada uno de esos 3 PWM con un periferico de entrada distinto, para
+ * practicar varios al tiempo:
+ *   ROJO  -> se sube/baja con el teclado del PC, mandando caracteres por
+ *            USART2 (el mismo cable USB del ST-Link sirve de puerto serial).
+ *   VERDE -> se mueve girando un encoder rotativo (una perilla que al
+ *            girarla genera pulsos en cuadratura, es decir 2 señales
+ *            digitales desfasadas entre si; el timer TIM2 tiene un modo
+ *            especial que cuenta esos pulsos solo).
+ *   AZUL  -> se mueve girando un potenciometro (una resistencia variable);
+ *            el ADC1 mide el voltaje analogico que entrega y lo convierte
+ *            a un numero de 0 a 4095 (12 bits).
+ * Todo el programa vive en un bucle "maquina de estados" (FSM = Finite
+ * State Machine, o sea una secuencia fija de pasos que se repite una y
+ * otra vez sin detenerse a esperar nada) de 4 pasos, y todo el codigo se
+ * escribio a mano con HAL puro, sin usar el generador CubeMX.
+ *
+ * ------------------------------------------------------------------------
+ * MAPA DE PINES
+ * ------------------------------------------------------------------------
+ * Pin   Funcion              Modo              Notas
+ * PA0   TIM2_CH1 Encoder A   AF1 + PullUp      cuadratura, filtro IC=15
+ * PA1   TIM2_CH2 Encoder B   AF1 + PullUp      cuadratura, filtro IC=15
+ * PA2   USART2_TX            AF7               hacia PC (ST-Link VCP)
+ * PA3   USART2_RX            AF7 + PullUp      obligatorio (evita flancos
+ *                                               falsos de start-bit en reposo)
+ * PA4   ADC1_IN4  Pot        Analogico         entrada del potenciometro
+ * PA5   LED Blinky Nucleo    Salida PP         toggle cada 500 ms (TIM10)
+ * PA6   TIM3_CH1  PWM Rojo   AF2               2 kHz, 0-999 ticks
+ * PA7   TIM3_CH2  PWM Verde  AF2               2 kHz, 0-999 ticks
+ * PA8   MCO1 16 MHz          AF0               bono: reloj para osciloscopio
+ * PB0   TIM3_CH3  PWM Azul   AF2               2 kHz, 0-999 ticks
+ * PH1   LED2 board auxiliar  Salida PP         espejo del blinky
+ * (AF = "Alternate Function": el modo que le dice al pin "no seas GPIO
+ * normal, comportate como la señal de tal periferico". PP = Push-Pull.)
+ *
+ * ------------------------------------------------------------------------
+ * CANAL ROJO: teclas por UART (que hace cada tecla y por que)
+ * ------------------------------------------------------------------------
+ *   '+'/'-'  suben/bajan el PWM de a 10 (saturan en 0 y 999) -- son las
+ *            unicas que exige la rubrica, sirven para variar el brillo
+ *            poco a poco.
+ *   '0'      apaga el canal de un toque (caso de prueba minimo: 0%).
+ *   '1'      lo manda directo a 100% (caso de prueba maximo, simetrico a '0').
+ *   'm'/'M'  cortesia propia (no la pide la rubrica): lo pone a 50%, un
+ *            punto medio util para comprobar a simple vista que el duty
+ *            de verdad sube y baja de forma lineal (no a saltos raros).
+ *   Cualquier otra tecla (ej. ENTER) simplemente vuelve a imprimir el menu.
+ *
+ * ------------------------------------------------------------------------
+ * LOS 4 TIMERS: uno por tarea, para no mezclar responsabilidades
+ * ------------------------------------------------------------------------
+ * Idea general: un timer es un contador de hardware que corre solo, sin
+ * gastar CPU; se le puede configurar para que "avise" o dispare algo cada
+ * cierto tiempo. Prescaler = por cuanto se divide el reloj antes de
+ * contar; Periodo = hasta cuanto cuenta antes de reiniciar.
+ *
+ *   TIM10 - blinky independiente (timer de 16 bits, bus APB2). Prescaler
+ *           16000-1, Periodo 500-1 => con el HSI de 16 MHz esto da un
+ *           "tic" cada 500 ms; en ese tic, por interrupcion, se apaga o
+ *           prende el LED de la placa (PA5/PH1). Se le puso prioridad alta
+ *           en el NVIC (el controlador de interrupciones) para que ese
+ *           parpadeo nunca se atrase aunque el UART o el ADC esten ocupados.
+ *
+ *   TIM2  - configurado en "modo encoder" (modo TI12): en vez de contar
+ *           tiempo, cuenta los pulsos de cuadratura del encoder, y cuenta
+ *           los 4 flancos (subida y bajada de ambas señales) de cada
+ *           "clic" mecanico, para maxima resolucion. No usa interrupcion:
+ *           la FSM simplemente lee el contador (CNT) directo en cada
+ *           vuelta del bucle, tal como lo pidio el profesor por correo.
+ *           ENCODER_MAX = 396 = 99 clics x 4 cuentas, un numero elegido
+ *           a proposito para que cada clic mueva el PWM exactamente ~1%
+ *           (~33 mV), la misma resolucion que el profesor mostro en su
+ *           video de ejemplo. La direccion del giro (si esta girando a
+ *           favor o en contra de las manecillas del reloj) el propio
+ *           timer la calcula solo y la deja en un bit llamado DIR dentro
+ *           del registro CR1 -- no hay que compararla a mano.
+ *
+ *   TIM3  - genera el PWM de los 3 colores desde un solo timer, usando
+ *           sus 3 canales de comparacion (uno por color, modo "PWM1").
+ *           Prescaler 8-1, Periodo 1000-1 => 16 MHz / 8 / 1000 = 2.000 kHz
+ *           exactos, un valor que cae dentro del rango 1-5 kHz que pide
+ *           la rubrica (ni parpadea a la vista, ni tan rapido que no se
+ *           pueda medir bien con el osciloscopio).
+ *
+ *   TIM4  - no genera ninguna señal visible; su unico trabajo es avisarle
+ *           al ADC1 "ya, mide ahora" cada 20 ms (50 Hz), sin que la CPU
+ *           tenga que estar pendiente de eso. Prescaler 16000-1, Periodo
+ *           20-1. Normalmente eso se hace con la salida TRGO del timer
+ *           (una señal interna pensada justo para disparar a otros
+ *           perifericos), pero en el STM32F411 el TIM4 NO tiene una salida
+ *           TRGO valida para el ADC (se confirmo revisando
+ *           stm32f4xx_hal_adc.h); los otros dos timers que si tienen TRGO
+ *           (TIM2 y TIM3) ya estaban ocupados con el encoder y el PWM. La
+ *           solucion fue usar el canal de comparacion CC4 del TIM4 en modo
+ *           PWM1: genera el mismo tipo de evento de disparo automatico,
+ *           sin gastar una interrupcion de timer adicional.
+ *
+ * ------------------------------------------------------------------------
+ * ADC1 (canal azul)
+ * ------------------------------------------------------------------------
+ * Resolucion de 12 bits (valores de 0 a 4095), leyendo el canal 4 (PA4),
+ * disparado por el TIM4 explicado arriba (no por software ni por DMA),
+ * usando la version con interrupcion (HAL_ADC_Start_IT). Solo se usa el
+ * grupo "regular" del ADC (una conversion normal y corriente); el grupo
+ * "injected" (para conversiones de prioridad, con sus propios registros
+ * JSQR/JOFRx/JDRx y su propia bandera JEOC) no se usa ni se toca en esta
+ * practica porque aqui no hace falta: solo hay un canal para leer.
+ * Zona muerta: si la lectura cruda (valor_adc) es menor a 100 cuentas, se
+ * fuerza pwm_azul = 0. Esto es necesario porque el circuito tiene una
+ * resistencia de 220 ohm entre el potenciometro y tierra (para evitar un
+ * corto cuando el pote esta en su posicion minima), y esa resistencia deja
+ * un pequeño voltaje de ruido (~35-40 mV) incluso en el minimo; sin la
+ * zona muerta el azul nunca llegaria a apagarse del todo.
+ *
+ * ------------------------------------------------------------------------
+ * USART2 (canal rojo)
+ * ------------------------------------------------------------------------
+ * Se configura como UART (asincrono, sin señal de reloj compartida) y no
+ * como USART (sincrono) -- el profesor aclaro explicitamente por correo
+ * que debia ser asincrono, para que la recepcion no se quede esperando
+ * para siempre un reloj que nunca va a llegar. La transmision (Tx) se
+ * hace por polling (se espera a que el envio termine); la recepcion (Rx)
+ * es obligatoria por interrupcion: se recibe 1 byte, se procesa, y se
+ * vuelve a armar la escucha del siguiente byte dentro del callback
+ * HAL_UART_RxCpltCallback.
+ *
+ * ------------------------------------------------------------------------
+ * LA FSM (el bucle principal, 4 pasos que se repiten sin parar)
+ * ------------------------------------------------------------------------
+ *   LEER_ADC -> LEER_ENCODER -> VERIFICAR_SERIAL -> ESCRIBIR_PWM -> (repite)
+ * Cada vuelta completa del bucle: se revisa el valor del ADC, se revisa
+ * el contador del encoder, se revisa si llego una tecla nueva por UART, y
+ * finalmente se aplican los 3 valores calculados a los PWM del TIM3 (y de
+ * paso se manda el reporte de estado, si toca). El reporte de estado por
+ * UART solo se transmite si de verdad cambio algo Y ya paso el tiempo
+ * minimo definido en REPORTE_INTERVALO_MIN_MS desde el ultimo envio; esto
+ * evita inundar la terminal cuando el potenciometro se gira despacio (el
+ * ADC entrega una muestra nueva cada 20 ms, mucho mas rapido de lo que un
+ * humano puede leer en pantalla).
+ *
+ * ------------------------------------------------------------------------
+ * BONOS (no los pide la rubrica, se agregaron por iniciativa propia)
+ * ------------------------------------------------------------------------
+ * BONO 1 - Reloj visible en un pin: HAL_RCC_MCOConfig(HSI, MCODIV_1) saca
+ * el reloj interno de 16 MHz sin dividir por el pin PA8, para poder
+ * verificarlo enganchando el osciloscopio ahi mismo.
+ *
+ * BONO 2 - Reportar la direccion de giro, no solo el valor: el reporte de
+ * estado por UART dice hacia donde giro CADA fuente que gira (el encoder
+ * y el potenciometro), no solo cuanto vale ahora. El encoder ya trae esa
+ * direccion gratis, en el bit DIR del registro CR1 de TIM2 (lo calcula el
+ * hardware del timer solo). El ADC no tiene nada parecido a un bit de
+ * direccion -- un voltaje analogico no "sabe" si viene subiendo o
+ * bajando -- asi que esa direccion se infiere por software: se guarda el
+ * valor anterior de pwm_azul y se compara contra el actual (variable
+ * pot_direccion), y solo se actualiza cuando el cambio es mayor al ruido
+ * de fondo (la misma zona muerta explicada arriba en la seccion del ADC).
  * ******************************************************************************
  */
 
