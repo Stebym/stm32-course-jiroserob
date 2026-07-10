@@ -204,19 +204,19 @@ TIM_HandleTypeDef  htim2;   // encoder rotativo
 TIM_HandleTypeDef  htim3;   // pwm de los 3 colores
 TIM_HandleTypeDef  htim4;   // trigger del adc cada 20 ms
 TIM_HandleTypeDef  htim10;  // blinky de 500 ms
-ADC_HandleTypeDef  hadc1;   // potenciomtero en PA4
+ADC_HandleTypeDef  hadc1;   // potenciometro en PA4
 UART_HandleTypeDef huart2;  // handle asincrono UART solicitado por el profe sin la S
 
 // lecturas crudas de los sensores
 uint32_t valor_adc = 0;
-uint8_t  rx_data[1];            // buffer de un byte para la interupcion
+uint8_t  rx_data[1];            // buffer de un byte para la interrupcion
 
 // duty cycles rango valido entre 0 apagado y 999 maximo brillo
 volatile uint32_t pwm_rojo  = 0;
 volatile uint32_t pwm_verde = 0;
 volatile uint32_t pwm_azul  = 0;
 
-// variables espejo para cheqear cambios en tiempo real y transmitir de una
+// variables espejo para chequear cambios en tiempo real y transmitir de una
 uint32_t pwm_rojo_ant  = 0;
 uint32_t pwm_verde_ant = 0;
 uint32_t pwm_azul_ant  = 0;
@@ -234,10 +234,10 @@ uint32_t tick_ultimo_reporte = 0;
 // flag que levanta la ISR cuando llega un byte por usart
 volatile uint8_t serial_nuevo = 0;
 
-// conatdor de clicks fisicos del encoder rotativo para la terminal
+// contador de clicks fisicos del encoder rotativo para la terminal
 volatile int32_t clics_encoder = 0;
 
-// stados de la maquina finita fsm
+// estados de la maquina de estados finita (fsm)
 typedef enum {
     ESTADO_LEER_ADC = 0,
     ESTADO_LEER_ENCODER,
@@ -270,6 +270,12 @@ void Enviar_Menu_Bienvenida(void);
 // -----------------------------------------------------------------------
 
 
+/**
+  * @brief  Punto de entrada del programa. Inicializa todo el hardware y
+  *         arranca la maquina de estados (FSM) que corre para siempre.
+  * @param  Ninguno
+  * @retval int (nunca retorna en la practica, el while(1) es infinito)
+  */
 int main(void)
 {
     // iniciamos el core tick a 1 ms latency flash nvic
@@ -283,14 +289,14 @@ int main(void)
     HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);       // verde PA7
     HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_3);       // azul PB0
 
-    // fases del conatdor del encoder
+    // arranca el contador del encoder en las 2 fases (canal A y B)
     HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
 
     // tim4 pwm canal 4 genera flancos para el adc cada 20 ms
     HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
     HAL_ADC_Start_IT(&hadc1); // armamos con interrupcion para disparar el callback
 
-    // arrancar interupciones del blinky y el receptor serial
+    // arrancar interrupciones del blinky y el receptor serial
     HAL_TIM_Base_Start_IT(&htim10);
     HAL_UART_Receive_IT(&huart2, rx_data, 1);
 
@@ -324,7 +330,7 @@ int main(void)
                         htim2.Instance->CNT = ENCODER_MAX;
                     }
 
-                    // mapeo del conatdor al pwm verde
+                    // mapeo del contador al pwm verde
                     pwm_verde = ((uint32_t)cnt * 999UL) / ENCODER_MAX;
 
                     // calculamos los clicks fisicos reales dividiendo por 4 los pasos
@@ -431,7 +437,7 @@ int main(void)
                     // transmite de inmediato por polling asincrono
                     HAL_UART_Transmit(&huart2, (uint8_t*)buffer_tx, strlen(buffer_tx), 100);
 
-                    // guardamos el stado actual en el espejo
+                    // guardamos el estado actual en el espejo
                     pwm_rojo_ant       = pwm_rojo;
                     pwm_verde_ant      = pwm_verde;
                     pwm_azul_ant       = pwm_azul;
@@ -458,10 +464,19 @@ int main(void)
 }
 
 // -----------------------------------------------------------------------
-// RUTEACIÓN DE PINES MANUAL
+// CONFIGURACION MANUAL DE PINES (GPIO)
 // -----------------------------------------------------------------------
 
 
+/**
+  * @brief  Configura a mano (sin CubeMX) todos los pines GPIO que usa la
+  *         practica: salidas digitales (LEDs), entradas analogicas (pote),
+  *         y pines en modo alternativo (AF) para el encoder, el PWM, el
+  *         UART y la salida de reloj MCO1. Ver el mapa de pines completo
+  *         en el encabezado del archivo.
+  * @param  Ninguno
+  * @retval Ninguno
+  */
 void GPIO_Init_Manual(void)
 {
     GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -504,7 +519,7 @@ void GPIO_Init_Manual(void)
     GPIO_InitStruct.Alternate = GPIO_AF1_TIM2;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    // PA4 pata del potenciomtero en modo analogico
+    // PA4 pata del potenciometro en modo analogico
     GPIO_InitStruct.Pin  = GPIO_PIN_4;
     GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -533,10 +548,18 @@ void GPIO_Init_Manual(void)
 }
 
 // -----------------------------------------------------------------------
-// INICIALISACION DE TIMER ENCODER TIM2
+// INICIALIZACION DE TIMER ENCODER TIM2
 // -----------------------------------------------------------------------
 
 
+/**
+  * @brief  Configura TIM2 en modo encoder (cuadratura TI12, los 4 flancos
+  *         de ambos canales) para leer el encoder rotativo del canal
+  *         verde. No usa interrupcion: la FSM lee el registro CNT
+  *         directamente en cada vuelta del bucle principal.
+  * @param  Ninguno
+  * @retval Ninguno
+  */
 void TIM2_Encoder_Init(void)
 {
     TIM_Encoder_InitTypeDef sConfig = {0};
@@ -551,7 +574,7 @@ void TIM2_Encoder_Init(void)
     // cuadratura completa en ambos flancos TI12
     sConfig.EncoderMode  = TIM_ENCODERMODE_TI12;
 
-    // filtros para qe los ruidos mecanicos de la perilla no sumen de mas
+    // filtros para que los ruidos mecanicos de la perilla no sumen de mas
     sConfig.IC1Polarity  = TIM_ICPOLARITY_RISING;
     sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
     sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
@@ -566,11 +589,19 @@ void TIM2_Encoder_Init(void)
 }
 
 // -----------------------------------------------------------------------
-// INICIALISACION DE TIMER PWM RGB TIM3 (2 kHz)
+// INICIALIZACION DE TIMER PWM RGB TIM3 (2 kHz)
 // -----------------------------------------------------------------------
 
 
 
+/**
+  * @brief  Configura TIM3 con sus 3 canales de comparacion en modo PWM1
+  *         (uno por cada color del LED RGB), a una frecuencia fija de
+  *         2 kHz. El duty de cada canal se actualiza despues, en la FSM,
+  *         con __HAL_TIM_SET_COMPARE.
+  * @param  Ninguno
+  * @retval Ninguno
+  */
 void TIM3_PWM_Init(void)
 {
     TIM_OC_InitTypeDef sConfigOC = {0};
@@ -595,11 +626,20 @@ void TIM3_PWM_Init(void)
 }
 
 // -----------------------------------------------------------------------
-// INICIALISACION DE TIMER DISPARADOR TIM4 (20 ms)
+// INICIALIZACION DE TIMER DISPARADOR TIM4 (20 ms)
 // -----------------------------------------------------------------------
 
 
 
+/**
+  * @brief  Configura TIM4 exclusivamente como disparador automatico del
+  *         ADC1 cada 20 ms (50 Hz), usando el canal de comparacion CC4 en
+  *         modo PWM1 en vez de TRGO (el STM32F411 no tiene una salida
+  *         TRGO valida para el ADC en este timer). No genera ninguna
+  *         señal visible ni usa interrupcion propia.
+  * @param  Ninguno
+  * @retval Ninguno
+  */
 void TIM4_Trigger_Init(void)
 {
     TIM_OC_InitTypeDef sConfigOC = {0};
@@ -622,11 +662,20 @@ void TIM4_Trigger_Init(void)
 }
 
 // -----------------------------------------------------------------------
-// INICIALISACION DE TIMER BLINKY TIM10 (500 ms)
+// INICIALIZACION DE TIMER BLINKY TIM10 (500 ms)
 // -----------------------------------------------------------------------
 
 
 
+/**
+  * @brief  Configura TIM10 para generar una interrupcion cada 500 ms,
+  *         usada unicamente para parpadear el LED indicador de la placa
+  *         (PA5/PH1) desde HAL_TIM_PeriodElapsedCallback. Se le asigna
+  *         prioridad alta en el NVIC para que nunca se atrase por culpa
+  *         del UART o el ADC.
+  * @param  Ninguno
+  * @retval Ninguno
+  */
 void TIM10_Blinky_Init(void)
 {
     __HAL_RCC_TIM10_CLK_ENABLE();
@@ -639,16 +688,24 @@ void TIM10_Blinky_Init(void)
     htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
     HAL_TIM_Base_Init(&htim10);
 
-    // prioridad alta para qe no se trabe por culpa del serial
+    // prioridad alta para que no se trabe por culpa del serial
     HAL_NVIC_SetPriority(TIM1_UP_TIM10_IRQn, 1, 0);
     HAL_NVIC_EnableIRQ(TIM1_UP_TIM10_IRQn);
 }
 
 // -----------------------------------------------------------------------
-// INICIALISACION DEL MODULO ANALOGO ADC1
+// INICIALIZACION DEL MODULO ANALOGO ADC1
 // -----------------------------------------------------------------------
 
 
+/**
+  * @brief  Configura el ADC1 en el canal 4 (PA4, potenciometro), 12 bits
+  *         de resolucion, disparo externo por TIM4 (ver TIM4_Trigger_Init)
+  *         y lectura por interrupcion (sin DMA). Solo se usa el grupo
+  *         regular del ADC, nunca el grupo injected.
+  * @param  Ninguno
+  * @retval Ninguno
+  */
 void ADC1_Init_Manual(void)
 {
     ADC_ChannelConfTypeDef sConfig = {0};
@@ -680,8 +737,16 @@ void ADC1_Init_Manual(void)
 }
 
 // -----------------------------------------------------------------------
-// INICIALISACION DEL PUERTO SERIAL ASINCRONO UART2
+// INICIALIZACION DEL PUERTO SERIAL ASINCRONO UART2
 // -----------------------------------------------------------------------
+/**
+  * @brief  Configura USART2 como UART asincrono puro (sin señal de reloj
+  *         compartida) a 115200 baudios, 8N1. La transmision se hace por
+  *         polling; la recepcion se habilita por interrupcion en main()
+  *         despues de esta inicializacion.
+  * @param  Ninguno
+  * @retval Ninguno
+  */
 void UART2_Init_Manual(void)
 {
     __HAL_RCC_USART2_CLK_ENABLE();
@@ -694,7 +759,7 @@ void UART2_Init_Manual(void)
     huart2.Init.Mode         = UART_MODE_TX_RX;
     huart2.Init.HwFlowCtl    = UART_HWCONTROL_NONE;
     huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-    HAL_UART_Init(&huart2); // configurado como uart asincrono puro sin reloj para qe no se pegue
+    HAL_UART_Init(&huart2); // configurado como uart asincrono puro sin reloj para que no se pegue
 
     HAL_NVIC_SetPriority(USART2_IRQn, 2, 0);
     HAL_NVIC_EnableIRQ(USART2_IRQn);
@@ -703,6 +768,12 @@ void UART2_Init_Manual(void)
 // -----------------------------------------------------------------------
 // EXPORTACION DE RELOJ MCO1 (BONO EXTRA)
 // -----------------------------------------------------------------------
+/**
+  * @brief  Bono: saca el reloj interno HSI (16 MHz, sin dividir) por el
+  *         pin PA8 (MCO1), para poder verificarlo con un osciloscopio.
+  * @param  Ninguno
+  * @retval Ninguno
+  */
 void MCO1_Config_Bono(void)
 {
     HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSI, RCC_MCODIV_1);
@@ -711,6 +782,14 @@ void MCO1_Config_Bono(void)
 // -----------------------------------------------------------------------
 // MENU DE BIENVENIDA POR USART2
 // -----------------------------------------------------------------------
+/**
+  * @brief  Transmite por USART2 el menu de bienvenida con la lista de
+  *         comandos disponibles. Se llama una vez al arrancar, cada 30 s
+  *         como recordatorio, y cada vez que llega una tecla no
+  *         reconocida (ver ESTADO_VERIFICAR_SERIAL en main).
+  * @param  Ninguno
+  * @retval Ninguno
+  */
 void Enviar_Menu_Bienvenida(void)
 {
     static const char msg_bienvenida[] =
@@ -734,6 +813,13 @@ void Enviar_Menu_Bienvenida(void)
 // -----------------------------------------------------------------------
 // LLAMADO DE HARDWARE CENTRAL
 // -----------------------------------------------------------------------
+/**
+  * @brief  Llama en orden a todas las funciones de inicializacion manual
+  *         de perifericos (GPIO, timers, ADC, UART y el bono de MCO1).
+  *         Se ejecuta una sola vez, al arrancar main().
+  * @param  Ninguno
+  * @retval Ninguno
+  */
 void Inicializar_Hardware(void)
 {
     GPIO_Init_Manual();
@@ -743,12 +829,19 @@ void Inicializar_Hardware(void)
     TIM4_Trigger_Init();
     TIM10_Blinky_Init();
     ADC1_Init_Manual();
-    UART2_Init_Manual(); // inicialisador uart asincrono enlazado
+    UART2_Init_Manual(); // inicializador del uart asincrono
 }
 
 // -----------------------------------------------------------------------
 // CALLBACKS DE INTERRUPCIONES DE LA HAL
 // -----------------------------------------------------------------------
+/**
+  * @brief  Callback de la HAL, invocado por TIM1_UP_TIM10_IRQHandler (en
+  *         stm32f4xx_it.c) cada vez que TIM10 desborda (cada 500 ms).
+  *         Alterna el LED indicador de la placa.
+  * @param  htim Handle del timer que disparo la interrupcion
+  * @retval Ninguno
+  */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM10) {
@@ -757,6 +850,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     }
 }
 
+/**
+  * @brief  Callback de la HAL, invocado por USART2_IRQHandler (en
+  *         stm32f4xx_it.c) cada vez que llega un byte nuevo por USART2.
+  *         Levanta la bandera serial_nuevo (que la FSM revisa en
+  *         ESTADO_VERIFICAR_SERIAL) y rearma la recepcion del siguiente byte.
+  * @param  huart Handle del UART que disparo la interrupcion
+  * @retval Ninguno
+  */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == USART2) {
@@ -765,6 +866,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     }
 }
 
+/**
+  * @brief  Callback de la HAL, invocado por ADC_IRQHandler (en
+  *         stm32f4xx_it.c) cada vez que TIM4 dispara una conversion nueva
+  *         del ADC1 (cada 20 ms). Lee el valor crudo, aplica la zona
+  *         muerta y lo escala a duty de PWM (0-999), y rearma el ADC para
+  *         la siguiente conversion.
+  * @param  hadc Handle del ADC que disparo la interrupcion
+  * @retval Ninguno
+  */
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
     if (hadc->Instance == ADC1) {
