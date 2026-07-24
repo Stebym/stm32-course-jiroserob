@@ -30,6 +30,7 @@
 #include "audio.h"
 #include "renderer.h"
 #include "game_fsm.h"
+#include "imagen_test.h"    /* DEBUG: borrar despues de confirmar display */
 
 /* === HANDLES DE PERIFERICOS (extern en los modulos que los necesitan) ===== */
 SPI_HandleTypeDef  hspi1;
@@ -84,6 +85,33 @@ int main(void) {
 
     /* --- FSM en splash --- */
     Game_Init(&gs);
+
+    /* DEBUG: 3 colores solidos (FillScreen) — ROJO 2s, VERDE 2s, AZUL 2s.
+     * Confirma que FillScreen funciona y que los colores se ven bien.
+     * Si rojo=azul y azul=rojo: cambiar MADCTL de 0x48 a 0x40 (quitar BGR). */
+    ILI9341_FillScreen(COLOR_RED);   HAL_Delay(2000);
+    ILI9341_FillScreen(COLOR_GREEN); HAL_Delay(2000);
+    ILI9341_FillScreen(COLOR_BLUE);  HAL_Delay(2000);
+
+    /* DEBUG: barras de calibracion (FillRect) — prueba de posicion y colores.
+     * Deberias ver 7 barras verticales: blanco, amarillo, cyan, verde,
+     * magenta, rojo, azul — de izquierda a derecha. Borrar despues.        */
+    ILI9341_FillRect(  0, 0,  46, 240, COLOR_WHITE);
+    ILI9341_FillRect( 46, 0,  46, 240, COLOR_YELLOW);
+    ILI9341_FillRect( 92, 0,  46, 240, COLOR_CYAN);
+    ILI9341_FillRect(138, 0,  46, 240, COLOR_GREEN);
+    ILI9341_FillRect(184, 0,  46, 240, COLOR_MAGENTA);
+    ILI9341_FillRect(230, 0,  45, 240, COLOR_RED);
+    ILI9341_FillRect(275, 0,  45, 240, COLOR_BLUE);
+    HAL_Delay(5000);
+
+    /* DEBUG: imagen xx.jpeg redimensionada a 320x240 — confirma que los
+     * pixeles se ven reconocibles (aunque quizas con colores invertidos).
+     * Si la imagen aparece correcta: display 100% OK. Borrar despues.      */
+    ILI9341_SetWindow(0, 0, 319, 239);
+    ILI9341_WritePixels(imagen_test, sizeof(imagen_test));
+    ILI9341_EndWrite();
+    HAL_Delay(5000);
 
     /* === LOOP PRINCIPAL — scheduler cooperativo === */
     while (1) {
