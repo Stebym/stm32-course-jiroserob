@@ -1,0 +1,472 @@
+========================================================================
+ 40 PREGUNTAS PARA LA SUSTENTACION - EXAMEN PARCIAL TALLER V
+ Jimmy Stebym Rosero Barrera - Nucleo-F411RE
+ De lo mas facil a lo mas dificil. Lee de corrido, no memorices de un tiron.
+========================================================================
+
+
+------------------------------------------------------------------------
+BLOQUE 1 - LED BLINKY / TIM10 (lo mas facil, calienta con esto)
+------------------------------------------------------------------------
+
+1. P: Que hace un Prescaler (PSC) en un timer?
+   R: Divide el reloj que entra al timer antes de que llegue al contador,
+      para que cuente mas lento. Frecuencia del contador = reloj / (PSC+1).
+   Truco: "PSC = que tan grande es cada paso del contador."
+
+2. P: Por que se divide entre PSC+1 y no entre PSC?
+   R: Porque el registro se diseno asi para que PSC=0 signifique "no
+      dividir nada" (velocidad maxima). Si fuera "entre PSC" a secas,
+      PSC=0 seria division por cero.
+   Truco: "PSC=0 = timer a toda velocidad, sin dividir."
+
+3. P: Que hace el ARR (Auto-Reload Register)?
+   R: Es hasta donde cuenta el timer antes de reiniciarse a 0 y generar
+      la interrupcion de "update". Cuenta ARR+1 pasos (incluye el 0).
+   Truco: "ARR = la meta que el contador tiene que alcanzar."
+
+4. P: Con PSC=9999 y ARR=2499 a 100MHz, por que el LED parpadea cada 250ms?
+   R: 100,000,000 / (9999+1) = 10,000 pasos/segundo (cada paso = 0.1ms).
+      (2499+1) = 2500 pasos hasta la interrupcion.
+      2500 pasos x 0.1ms = 250ms exactos.
+   Truco: "diez mil pasos por segundo, cuento 2500, es un cuarto de segundo."
+
+5. P: Si subieras el PSC al doble dejando el ARR igual, el LED parpadearia
+      mas rapido o mas lento?
+   R: Mas lento. PSC mas grande = timer mas lento = tarda mas en llegar al
+      ARR = periodo mas largo.
+   Truco: "PSC grande = timer perezoso."
+
+
+------------------------------------------------------------------------
+BLOQUE 2 - OLED / I2C (10 pts)
+------------------------------------------------------------------------
+
+6. P: Que controlador tiene tu OLED y por que el codigo dice "SSD1306" en
+      todos lados?
+   R: El chip real es el SSD1315, pero usa el mismo set de comandos que el
+      clasico SSD1306 (son compatibles a nivel de protocolo).
+   Truco: "SSD1315 habla el mismo idioma que el SSD1306."
+
+7. P: Por que I2C necesita resistencias pull-up y modo open-drain?
+   R: En I2C ningun dispositivo puede "empujar" la linea a alto, solo
+      puede jalarla a tierra (open-drain). Las pull-up son las que
+      regresan la linea a alto cuando nadie la jala.
+   Truco: "en I2C todos pueden bajar la linea, nadie la puede subir solo."
+
+8. P: Por que el I2C del OLED va en polling y no con interrupcion, si la
+      rubrica exige interrupciones en otros perifericos?
+   R: Dos razones: (1) la rubrica lo permite explicito para I2C, (2)
+      tecnicamente tu decides cuando hablarle al OLED (cada 150ms), no es
+      un evento externo impredecible como un byte de UART.
+   Truco: "yo llamo, no me llaman -- por eso no necesito timbre (interrupcion)."
+
+9. P: Que es el framebuffer del driver y por que mide 1024 bytes?
+   R: Es una copia completa de la pantalla en RAM (128 columnas x 8
+      "paginas" de 8 pixeles de alto cada una = 128x64 pixeles = 1024
+      bytes) que se arma antes de mandarla entera de un tiron.
+   Truco: "128 x 8 = 1024 -- primero dibujo en RAM, despues mando todo junto."
+
+10. P: Que hace HAL_I2C_IsDeviceReady y para que la usaste?
+    R: Manda solo el byte de direccion (sin datos) y revisa si algun
+       dispositivo responde con ACK en esa direccion. La usaste en
+       OLED_ScanAddress para descubrir si el OLED responde en 0x78 o 0x7A
+       (el modulo trae un jumper fisico que puede cambiar la direccion).
+    Truco: "toca la puerta y pregunta si hay alguien, sin pasar a hablar."
+
+11. P: Que necesitaste habilitar en stm32f4xx_hal_conf.h para que el I2C
+       compilara, y por que no venia por defecto?
+    R: HAL_I2C_MODULE_ENABLED (y su include correspondiente). No venia
+       porque el proyecto se armo copiando de un proyecto sin I2C (Tarea
+       3), asi que ese modulo estaba apagado por defecto.
+    Truco: "cada periferico HAL hay que prenderlo a mano en el .conf.h."
+
+
+------------------------------------------------------------------------
+BLOQUE 3 - UART / CONSOLA DE COMANDOS (10 pts)
+------------------------------------------------------------------------
+
+12. P: Por que UART si necesita interrupcion?
+    R: Un byte puede llegar en cualquier momento sin avisar. Necesitas
+       reaccionar apenas llega, no puedes estar "revisando" todo el rato
+       (eso desperdiciaria CPU y podrias perder el dato).
+    Truco: "UART te sorprende, I2C no."
+
+13. P: Explica el mecanismo de HAL_UART_Receive_IT y por que hay que
+       "re-armarlo" en el callback.
+    R: Le dice al periferico "avisame cuando llegue 1 byte". Cuando llega,
+       salta HAL_UART_RxCpltCallback una sola vez; si no vuelves a llamar
+       HAL_UART_Receive_IT ahi mismo, nunca mas te avisa de otro byte.
+    Truco: "la interrupcion de UART es de un solo uso, hay que recargarla
+       cada vez, como una trampa para ratones."
+
+14. P: Cuales son tus 6 comandos y que hace cada uno?
+    R: H/L/P cambian la fuente de MCO1 (HSI/LSE/PLL); T ajusta la hora del
+       RTC; F ajusta la fecha del RTC; R prende/apaga un reporte periodico.
+    Truco: "Hache-Ele-Pe el reloj, Te-Efe el calendario, Erre el reporte."
+
+15. P: Por que la recepcion es por interrupcion pero la transmision (TX)
+       es por polling (HAL_UART_Transmit normal)?
+    R: Porque tu decides cuando transmitir (es iniciativa tuya, como el
+       I2C), mientras que RX depende de cuando al otro lado (la PC) se le
+       ocurra mandar un byte -- ahi si necesitas la interrupcion.
+    Truco: "TX = yo hablo cuando quiero. RX = no se cuando me van a hablar."
+
+16. P: Que pasa si mandas una tecla que no es ninguno de los 6 comandos?
+    R: Cae en el "default" del switch, que reimprime el menu de ayuda
+       completo por consola.
+    Truco: "tecla rara = te vuelvo a mostrar las instrucciones."
+
+
+------------------------------------------------------------------------
+BLOQUE 4 - JOYSTICK / ADC (15 pts, el sensor sorteado)
+------------------------------------------------------------------------
+
+17. P: Que tipo de sensor es el KY-023 y que 3 senales entrega?
+    R: Un joystick analogico de 2 ejes: dos potenciometros (VRx, VRy) mas
+       un boton mecanico (SW) al presionar el eje hacia abajo.
+    Truco: "2 potenciometros + 1 boton = joystick analogico."
+
+18. P: Que es el "modo Scan" del ADC y por que lo usaste?
+    R: Permite que un solo ADC lea varios canales en secuencia automatica
+       (rank1, rank2, ...) sin que tengas que reconfigurarlo a mano entre
+       cada lectura. Lo usaste para leer X y Y con un solo ADC.
+    Truco: "Scan = una lista de canales que el ADC recorre solo."
+
+19. P: Para que sirve TIM3 en tu proyecto de ADC?
+    R: Genera una senal de disparo (TRGO) cada 20ms que arranca la
+       conversion del ADC automaticamente, sin que el loop principal
+       tenga que estar pendiente del tiempo.
+    Truco: "TIM3 es el despertador que le dice al ADC 'ya, mide ahora'."
+
+20. P: Por que el ADC SI necesita interrupcion aunque el disparo venga de
+        un timer?
+    R: Porque no sabes exactamente cuando termina la conversion (toma un
+       tiempo variable segun sampling time); la interrupcion te avisa
+       "ya esta listo el dato" sin que tengas que estar preguntando.
+    Truco: "el timer dice CUANDO empezar, la interrupcion dice CUANDO ya
+       esta listo."
+
+21. P: Que fue el bug de "crosstalk" entre canales y como lo arreglaste?
+    R: Al leer 2 canales distintos muy rapido en el mismo ADC, el
+       capacitor interno de muestreo no alcanzaba a "olvidar" el voltaje
+       del canal anterior, y un eje contaminaba al otro. Se arreglo
+       subiendo el SamplingTime de 15 a 480 ciclos, dandole al capacitor
+       mas tiempo de asentarse en el nuevo canal.
+    Truco: "mas tiempo de muestreo = el capacitor se olvida bien del canal
+       de antes."
+
+22. P: Por que separaste el joystick de PA0/PA1 a PA1/PA4?
+    R: PA0 y PA1 son pines fisicamente adyacentes en el header de la
+       Nucleo, y en el cableado real (planchado a 90 grados) aparecia
+       continuidad electrica entre los dos ejes. PA1 y PA4 no son
+       vecinos, asi que un roce accidental es mucho mas dificil.
+    Truco: "pines vecinos + cables apretados = corto accidental facil."
+
+23. P: Para que sirven el filtro y la zona muerta, y donde se aplican?
+    R: El filtro (promedio movil exponencial) suaviza ruido de una
+       lectura suelta. La zona muerta fuerza el valor exacto al centro
+       (2048) si esta dentro de +-150 cuentas, para que se vea
+       perfectamente quieto en reposo. Ambos se aplican DENTRO de la
+       interrupcion del ADC (en la fuente del dato), no solo visualmente,
+       para que reporte, pantalla y cursor coincidan siempre.
+    Truco: "filtro = suaviza el ruido. Zona muerta = calla el reposo.
+       Los dos en la fuente, no en la pantalla."
+
+24. P: Por que el cursor en el OLED usa joystick_y para la posicion X en
+       pantalla y joystick_x para la posicion Y (parece al reves)?
+    R: El modulo del joystick quedo fisicamente montado rotado 90 grados
+       en la protoboard. Se confirmo en hardware real que intercambiando
+       que variable alimenta a cada eje del dibujo, el cursor se mueve en
+       la direccion que uno espera.
+    Truco: "el modulo esta rotado, asi que el software rota la lectura de
+       vuelta para compensar."
+
+
+------------------------------------------------------------------------
+BLOQUE 5 - RTC + LSE + VBAT (20 pts, el que mas pesa despues de la
+sustentacion -- estudiate este bloque a fondo)
+------------------------------------------------------------------------
+
+25. P: Que es el RTC y para que sirve el registro de backup?
+    R: El RTC (Real-Time Clock) es un contador de calendario que sigue
+       corriendo incluso con muy poco consumo. El registro de backup
+       (RTC_BKP_DR0) guarda un numero fijo ("magico") para detectar si es
+       la primera vez que arranca (o si se perdio la hora), sin depender
+       de ninguna variable normal de RAM que se borraria en cada reset.
+    Truco: "el registro de backup es la unica memoria que sobrevive un
+       reset sin perder su valor."
+
+26. P: Por que usaste LSE y no LSI para el RTC?
+    R: El LSI es un oscilador RC interno, impreciso (varia con
+       temperatura). El LSE es un cristal externo de 32.768kHz, mucho mas
+       exacto -- es el estandar de la industria para relojes de tiempo
+       real.
+    Truco: "LSE = cristal exacto. LSI = RC chueco."
+
+27. P: Por que 32.768kHz especificamente, y no cualquier otro valor?
+    R: Porque 32,768 = 2 elevado a la 15. Al ser una potencia de 2 exacta,
+       se puede dividir con divisores binarios simples hasta llegar
+       exactamente a 1 pulso por segundo, sin ningun error de redondeo.
+    Truco: "32768 es 2 a la 15 -- se divide parejo hasta 1Hz sin sobrar
+       nada."
+
+28. P: Explica los valores AsynchPrediv=127 y SynchPrediv=255.
+    R: (127+1) x (255+1) = 128 x 256 = 32,768. Divides el cristal completo
+       para sacar exactamente 1Hz, que es lo que el bloque de calendario
+       del RTC necesita para contar segundos reales.
+    Truco: "128 por 256 me da los 32768 del cristal -- de ahi saco 1Hz."
+
+29. P: Que es VBAT y por que hace falta una pila aparte?
+    R: VBAT es el pin que alimenta el "dominio de respaldo" del micro
+       (RTC + registros BKP), independiente de la alimentacion principal
+       (VDD/USB). Con una pila (CR2032, 3V) conectada ahi, el RTC sigue
+       corriendo aunque desconectes todo lo demas.
+    Truco: "VBAT es la alimentacion de emergencia solo para el reloj."
+
+30. P: Que es el puente SB45 y por que lo cortaste?
+    R: De fabrica, la Nucleo trae SB45 soldado, conectando VDD a VBAT (asi
+       el RTC funciona sin pila mientras desarrollas). Si no lo cortas,
+       siempre estas "haciendo trampa" -- el USB alimenta VBAT y nunca
+       demuestras que la pila real sostiene el reloj sola.
+    Truco: "SB45 puesto = trampa. SB45 cortado = la pila manda de verdad."
+
+31. P: Que es un "shadow register" en el RTC y por que siempre lees Time y
+       luego Date, aunque solo necesites uno de los dos?
+    R: Los shadow registers son una copia congelada de hora/fecha para
+       que no cambien a la mitad de una lectura (evita leer, por ejemplo,
+       23:59:59 de un registro y 00:00:00 del otro por mala suerte). Leer
+       GetDate justo despues de GetTime es lo que "desbloquea" el shadow
+       register para la siguiente lectura -- si no lo haces, el shadow
+       queda congelado y dejas de ver la hora avanzar.
+    Truco: "GetTime congela, GetDate descongela -- siempre van en pareja."
+
+32. P: Como decide tu codigo si debe poner la fecha/hora por defecto o
+       dejar la que ya tenia el RTC?
+    R: Revisa si RTC_BKP_DR0 tiene el numero magico (0x32F2). Si no lo
+       tiene, asume que es el primer arranque (o que se agoto la pila) y
+       pone una fecha por defecto. Si ya lo tiene, no toca nada porque el
+       RTC ya viene corriendo solo con la hora real.
+    Truco: "sin numero magico = reloj en cero. Con numero magico = no me
+       metas mano."
+
+
+------------------------------------------------------------------------
+BLOQUE 6 - PLL / 100MHz / MCO1 (15 pts)
+------------------------------------------------------------------------
+
+33. P: Que es un PLL y para que lo necesitas?
+    R: Un PLL (Phase-Locked Loop) multiplica un reloj de entrada a una
+       frecuencia mas alta y estable. Lo necesitas porque el HSI interno
+       solo da 16MHz, y quieres correr el micro a 100MHz.
+    Truco: "PLL = multiplicador de frecuencia."
+
+34. P: Explica la cuenta completa de HSI (16MHz) a 100MHz.
+    R: 16MHz / PLLM(8) = 2MHz (entrada al VCO, debe estar entre 1-2MHz).
+       2MHz x PLLN(200) = 400MHz (salida del VCO, debe estar 192-432MHz).
+       400MHz / PLLP(4) = 100MHz (SYSCLK final).
+    Truco: "entre 8, por 200, entre 4 -- repitelo asi de corrido."
+
+35. P: Por que hacen falta 3 wait-states de Flash a 100MHz?
+    R: La memoria Flash no puede leer instrucciones tan rapido como corre
+       el CPU a esa frecuencia; los wait-states le dan tiempo extra a la
+       Flash para entregar el dato antes de que el CPU lo necesite.
+    Truco: "el CPU corre mas rapido que la Flash -- los wait-states la
+       esperan."
+
+36. P: Para que sirve MCO1 (PA8) y como demuestra que SYSCLK esta a
+       100MHz de verdad?
+    R: MCO1 saca hacia un pin fisico una copia de algun reloj interno,
+       para medirla con osciloscopio. Con el comando 'P' sale el PLL
+       dividido entre 4 (25MHz medibles); como sabes que aplicaste esa
+       division, mides 25MHz y demuestras que adentro hay 100MHz reales.
+    Truco: "mido 25MHz en la punta, se que adentro hay 100MHz porque yo
+       mismo dividi entre 4."
+
+37. P: Que frecuencias esperas medir con los comandos H y L en MCO1?
+    R: H = HSI sin dividir = 16MHz. L = LSE sin dividir = 32.768kHz.
+    Truco: "H y L salen directo, sin dividir. Solo P se divide entre 4."
+
+
+------------------------------------------------------------------------
+BLOQUE 7 - FSM / INTERRUPCIONES / VISION GENERAL (las preguntas mas
+"grandes", para cerrar con las ideas que amarran todo el proyecto)
+------------------------------------------------------------------------
+
+38. P: Que es una maquina de estados finita (FSM) y por que la usaste en
+       vez de un monton de "if" sueltos?
+    R: Es un sistema que en todo momento esta en UNO y solo un estado de
+       un conjunto fijo, y solo cambia de estado por reglas claras. Evita
+       el enredo de banderas cruzadas -- cada estado sabe exactamente que
+       eventos le importan.
+    Truco: "un semaforo: nunca esta en dos colores a la vez, y cambia solo
+       por reglas fijas."
+
+39. P: Nombra los estados de tu FSM y que dispara cada transicion.
+    R: INICIALIZACION -> BIENVENIDA (automatico, arranca hardware).
+       BIENVENIDA -> MONITOR (primer click del joystick).
+       MONITOR -> CONFIG_RTC ('T') / CONFIG_FECHA ('F').
+       CONFIG_RTC / CONFIG_FECHA -> MONITOR (ENTER o click).
+    Truco: repite la lista completa de corrido, como una cancion.
+
+40. P: En que perifericos usaste interrupcion y en cual NO, y por que esa
+        diferencia es la pregunta mas importante de toda la sustentacion?
+    R: SI llevan interrupcion: UART (Rx), ADC (fin de conversion,
+       disparado por TIM3), TIM10 (blink cada 250ms), EXTI0 (click del
+       joystick). NO lleva interrupcion: I2C del OLED (polling, permitido
+       explicitamente por la rubrica). La regla general: interrupcion para
+       eventos externos impredecibles (llega un byte, se agota un timer,
+       se presiona un boton); polling para cuando TU controlas el momento
+       exacto de la comunicacion (hablarle al OLED).
+    Truco: "si el evento me sorprende, uso interrupcion. Si yo decido
+       cuando pasa, uso polling."
+
+------------------------------------------------------------------------
+BLOQUE 8 - PREGUNTAS TRAMPA DE FSM Y BLINKY (usa los 2 LENTES, no
+memorices esto literal -- reconstruyelo con el lente en el momento)
+------------------------------------------------------------------------
+
+LENTE 1 (FSM): toda variable normal (estado_fsm, joystick_x, buffers,
+etc.) vive en RAM y se resetea con el micro. Solo el RTC + RTC_BKP_DR0
+sobreviven, porque estan en el dominio de respaldo (VBAT).
+
+LENTE 2 (Blinky/interrupciones): prioridades NVIC configuradas --
+TIM10(blink)=1 (la mas alta) > EXTI0=2 = UART=2 > ADC=3 (la mas baja).
+Numero mas bajo = se atiende primero si hay dos interrupciones a la vez.
+
+42. P: Si el micro se resetea estando en ESTADO_CONFIG_FECHA, en que
+        estado arranca de nuevo?
+    R: (Lente 1) Siempre en ESTADO_INICIALIZACION -> BIENVENIDA. La FSM
+       no recuerda nada de antes del reset -- solo el RTC sobrevive.
+
+43. P: Por que la hora del RTC persiste pero el estado de la FSM no?
+    R: (Lente 1) Son cosas fisicamente distintas: la hora vive en el
+       dominio de respaldo (alimentado por VBAT). El estado de la FSM
+       vive en RAM normal (alimentada por VDD, se borra sin VDD).
+
+44. P: Por que el LED nunca se ve "trabado" ni con retraso, aunque muevas
+        el joystick o escribas por consola al mismo tiempo?
+    R: (Lente 2) TIM10 tiene la prioridad NVIC mas alta (1) de todo el
+       sistema. Si dos interrupciones compiten, el blink siempre se
+       atiende primero.
+
+45. P: De todos los perifericos con interrupcion, por que justo el blinky
+        tiene la prioridad mas alta y no, por ejemplo, el ADC?
+    R: (Lente 2 + regla de la rubrica) El blinky es el unico item que
+       resta puntos si falla (-10 si no esta presente), asi que se le dio
+       la maxima prioridad para garantizar que nunca se vea afectado por
+       otra interrupcion.
+
+46. P: ESTADO_BIENVENIDA se queda "esperando" el primer click sin hacer
+        nada mas -- eso rompe la regla de "nunca bloquear"?
+    R: No es un bloqueo real (no hay HAL_Delay ni un while que detenga al
+       CPU). Es solo un estado que no hace nada util todavia -- el CPU
+       sigue libre y atiende sus interrupciones normalmente (el blink
+       sigue parpadeando durante BIENVENIDA, por ejemplo, porque corre en
+       su propia interrupcion, independiente de la FSM).
+
+47. P: TIM10 y TIM1 comparten el mismo vector de interrupcion en el F411
+        (TIM1_UP_TIM10_IRQn). Si tu proyecto no usa TIM1, por que el
+        callback igual revisa "if (htim->Instance == TIM10)"?
+    R: Por seguridad/buena practica: aunque hoy no haya conflicto real
+       (no usas TIM1), el codigo queda correcto igual si algun dia se
+       agrega TIM1 -- sin ese chequeo, cualquier interrupcion de ese
+       vector compartido ejecutaria el toggle del LED sin verificar que
+       de verdad vino de TIM10.
+
+------------------------------------------------------------------------
+BLOQUE 9 - "COMO HICISTE ESO?" (todo lo que se VE en pantalla/consola,
+para cuando el profesor senale algo en vivo y pregunte)
+------------------------------------------------------------------------
+
+LENTE 3 (el mas util para este bloque): TODO lo que se ve sigue el mismo
+patron de 3 pasos:
+  1) tomo el dato crudo (hora, joystick, etc.)
+  2) lo formateo en un texto con snprintf (uso %02u para que salga
+     siempre con 2 digitos, tipo "05" en vez de "5")
+  3) lo dibujo (SSD1306_WriteString) o lo mando (HAL_UART_Transmit)
+
+48. P: Como hiciste el cuadrado que se mueve con el joystick en el OLED?
+    R: Son 2 dibujos separados: SSD1306_DrawEmptyRect dibuja el marco fijo
+       (4 lineas rectas de pixeles, no cambia nunca). SSD1306_DrawCross
+       dibuja un "+" de 5 pixeles en una posicion que SI cambia cada
+       refresco, calculada con la funcion Map() -- una regla de tres que
+       convierte el 0-4095 del joystick en la posicion de pixel dentro
+       del marco.
+    Truco: "el marco es fijo, el cursor se mueve -- Map() hace la regla
+       de tres entre el valor del ADC y la posicion en pantalla."
+
+49. P: Como pusiste letras en un display que solo maneja pixeles?
+    R: Con una tabla de fuente bitmap (Font5x7): cada letra se guarda como
+       5 bytes, cada byte es una columna vertical de 8 pixeles (cada bit
+       = un pixel prendido o no). SSD1306_WriteString busca el dibujo de
+       cada letra en esa tabla y prende los pixeles uno por uno con
+       SSD1306_DrawPixel.
+    Truco: "no escribo letras, dibujo la forma de cada letra pixel por
+       pixel, usando una tabla que ya tiene esos dibujitos guardados."
+
+50. P: Que significa el texto "Estado: MONITOR" en la pantalla?
+    R: Es un texto fijo que solo se dibuja mientras la FSM esta en
+       ESTADO_MONITOR -- es la prueba visual de que el programa sabe en
+       que estado esta (si entras a ajustar hora, cambia a "CONFIG RTC").
+    Truco: "el texto en pantalla es un espejo de la variable estado_fsm."
+
+51. P: Como hiciste que la hora y la fecha salgan juntas en un solo
+        renglon arriba del OLED?
+    R: Un solo snprintf con formato "%02u:%02u:%02u  20%02u-%02u-%02u"
+       que junta los 6 campos que da el RTC (horas, minutos, segundos,
+       anio, mes, dia) en un unico texto, dibujado con un solo
+       SSD1306_WriteString.
+
+52. P: Por que "Joy X" siempre ocupa el mismo ancho en pantalla aunque el
+        numero cambie de 3 a 4 digitos?
+    R: El formato usado es "%4u" (reserva 4 espacios para el numero,
+       rellenando con espacios si el numero es mas corto) -- asi el texto
+       no "baila" de ancho cuando el valor cambia.
+
+53. P: Como armaste el menu de ayuda con las rayas "====" por consola?
+    R: Es un solo bloque de texto fijo (un arreglo static const char) que
+       ya trae escritas a mano las rayas, los \r\n y el texto completo --
+       se manda entero de una sola vez con HAL_UART_Transmit. No se arma
+       en tiempo real, esta guardado tal cual en la memoria Flash.
+
+54. P: Como armaste el reporte "=== REPORTE DEL SISTEMA ===" con tantos
+        campos distintos?
+    R: Un snprintf grande que junta TODOS los campos (fecha, hora,
+       joystick X/Y, fuente de MCO1, frecuencia real de SYSCLK, estado de
+       la FSM) en un solo texto. La frecuencia sale de
+       HAL_RCC_GetSysClockFreq(), que lee el reloj real configurado en
+       ese momento (no es un numero fijo escrito a mano).
+
+55. P: Como hiciste que se vea lo que vas tecleando (ej. "> 14:3") en la
+        pantalla mientras escribes la hora o la fecha?
+    R: Cada tecla que llega por UART se agrega a un buffer de texto
+       (rtc_input_buffer) caracter por caracter. Cada vez que llega una
+       tecla nueva, se vuelve a dibujar "> %s" con snprintf mostrando el
+       buffer completo hasta ese momento -- por eso se ve "crecer" letra
+       por letra. El backspace simplemente resta 1 al contador de
+       caracteres del buffer (rtc_input_len--).
+    Truco: "el buffer crece con cada tecla y se redibuja completo cada
+       vez -- no se pinta letra por letra en tiempo real, se re-arma el
+       texto entero y se vuelve a mandar."
+
+------------------------------------------------------------------------
+BONUS (pregunta trampa clasica de I2C, agregada despues -- pregunta 41)
+------------------------------------------------------------------------
+
+41. P: Por que tu codigo usa las direcciones I2C 0x78/0x7A en vez de
+        0x3C/0x3D que aparecen en muchos datasheets genericos de SSD1306?
+    R: La direccion I2C real es de 7 bits (0x3C o 0x3D). Al transmitirse
+       por el bus, ese numero se recorre 1 bit a la izquierda y el bit
+       bajo que queda libre indica lectura/escritura (formato de 8 bits).
+       0x3C recorrido = 0x78. El HAL de STM32 (HAL_I2C_IsDeviceReady,
+       HAL_I2C_Mem_Write, etc.) espera la direccion YA recorrida (formato
+       de 8 bits), por eso el codigo usa 0x78/0x7A directamente.
+    Truco: "0x3C es la direccion real de 7 bits. 0x78 es esa misma
+       direccion ya corrida un bit para que la entienda el HAL."
+
+========================================================================
+ TIP FINAL: si te preguntan algo que no esta aqui literal, usa el truco
+ general del Bloque 7, pregunta 40 -- casi todo en esta rubrica se explica
+ con "es un evento impredecible (interrupcion) o lo controlo yo (polling)".
+========================================================================

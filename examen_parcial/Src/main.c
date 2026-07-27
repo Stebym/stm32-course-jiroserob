@@ -11,12 +11,14 @@
  * QUE HACE ESTE PROGRAMA
  * ------------------------------------------------------------------------
  * Resuelve las 6 preguntas tecnicas del examen (la 7ma es la sustentacion
- * oral) usando una FSM de 4 estados, todo HAL puro sin CubeMX:
+ * oral) usando una FSM de 5 estados (mas un easter egg opcional, ver abajo),
+ * todo HAL puro sin CubeMX:
  *   1. LED de estado parpadeando a 250 ms exactos (TIM10, interrupcion).
  *   2. OLED GME12864-41 por I2C1, polling (el enunciado exige que I2C NO
  *      use interrupciones), mostrando hora RTC, joystick X/Y y estado FSM.
- *   3. USART2 115200 8N1, Rx por interrupcion, con 5 comandos verificables:
- *      'H'/'L'/'P' (fuente de MCO1), 'T' (ajustar hora RTC), 'R' (reporte).
+ *   3. USART2 115200 8N1, Rx por interrupcion, con 6 comandos verificables:
+ *      'H'/'L'/'P' (fuente de MCO1), 'T' (ajustar hora RTC), 'F' (ajustar
+ *      fecha RTC), 'R' (reporte).
  *   4. Joystick analogico (ADC1, 2 canales en modo Scan disparado cada
  *      20 ms por TIM3_TRGO, lectura por interrupcion, sin DMA).
  *   5. RTC interno con LSE (cristal 32.768 kHz de la board) + VBAT, para
@@ -37,6 +39,7 @@
  * PA8   MCO1                 AF0               HSI / LSE / PLL segun comando
  * PB8   I2C1_SCL  OLED       AF4 open-drain    GME12864-41
  * PB9   I2C1_SDA  OLED       AF4 open-drain    GME12864-41
+ * PH1   LED espejo del blinky Salida PP        toggle junto con PA5 (micro tapado en la demo)
  * PC13  Boton azul B1 board  Entrada           no usado por ahora (libre)
  *
  * ------------------------------------------------------------------------
@@ -108,7 +111,7 @@
  * pisa la hora real.
  *
  * ------------------------------------------------------------------------
- * LA FSM (4 estados)
+ * LA FSM (5 estados)
  * ------------------------------------------------------------------------
  *   ESTADO_INICIALIZACION -> arranca relojes (100 MHz), RTC, ADC, OLED.
  *   ESTADO_BIENVENIDA      -> pantalla de arranque ("Presione click para
@@ -117,11 +120,14 @@
  *                             boton SW del joystick (PA0, EXTI).
  *   ESTADO_MONITOR         -> refresca el OLED con hora/joystick/estado,
  *                             procesa comandos H/L/P/R de una, y salta a
- *                             CONFIG_RTC si llega 'T'.
+ *                             CONFIG_RTC si llega 'T' o a CONFIG_FECHA si
+ *                             llega 'F'.
  *   ESTADO_CONFIG_RTC      -> pausa el refresco de joystick en pantalla,
  *                             muestra un prompt y arma "HH:MM:SS" caracter
  *                             a caracter hasta un ENTER, corrige el RTC y
- *                             regresa a MONITOR.
+ *                             regresa a MONITOR (tambien ajustable con el
+ *                             joystick).
+ *   ESTADO_CONFIG_FECHA    -> igual que CONFIG_RTC pero para "DD/MM/YY".
  *
  * ------------------------------------------------------------------------
  * BOTON SW DEL JOYSTICK (click central, PA0, EXTI por interrupcion)
@@ -135,7 +141,6 @@
 #include "stm32f4xx_hal.h"
 #include "stm32f4xx_it.h"
 #include "oled_display.h"
-#include "tetris.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -194,7 +199,7 @@ static uint8_t rtc_input_len = 0;
 typedef enum { MCO_FUENTE_HSI = 0, MCO_FUENTE_LSE, MCO_FUENTE_PLL } MCO_Fuente_t;
 static MCO_Fuente_t mco_fuente_actual = MCO_FUENTE_HSI;
 
-/* boton sw del joystick (click central, pc0, exti por flanco de bajada) */
+/* boton sw del joystick (click central, pa0, exti por flanco de bajada) */
 #define SW_DEBOUNCE_MS      200U   /* ignora rebotes/reclicks mas rapidos que esto */
 volatile uint8_t boton_sw_pulsado = 0;   /* la isr la levanta, el loop la consume */
 static uint32_t  tick_ultimo_click = 0;  /* para el debounce dentro de la isr     */
@@ -226,17 +231,8 @@ typedef enum {
     ESTADO_BIENVENIDA,
     ESTADO_MONITOR,
     ESTADO_CONFIG_RTC,
-    ESTADO_CONFIG_FECHA,
-    ESTADO_TETRIS /* easter egg, no forma parte de la rubrica -- ver tetris.c */
+    ESTADO_CONFIG_FECHA
 } FSM_Estado_t;
-
-/* codigo secreto: 5 clicks del joystick separados por menos de 2s c/u,
- * alterna MONITOR <-> TETRIS. vive aca (no en tetris.c) porque necesita
- * mirar/cambiar estado_fsm directamente */
-#define SECRETO_VENTANA_MS  2000U
-#define SECRETO_CLICKS       3U
-static uint32_t tick_ultimo_click_secreto = 0;
-static uint8_t  clicks_secreto = 0;
 
 FSM_Estado_t estado_fsm = ESTADO_INICIALIZACION;
 
@@ -284,52 +280,6 @@ int main(void)
 
     while (1)
     {
-        /* codigo secreto (easter egg): 3 clicks rapidos (<2s entre cada
-         * uno) alternan MONITOR <-> TETRIS.
-         * OJO: en ESTADO_MONITOR hay que consumir boton_sw_pulsado SIEMPRE
-         * aca (nadie mas lo lee en ese estado) -- si no, el mismo click
-         * fisico se sigue viendo en cada vuelta del while(1) (que da miles
-         * de vueltas por segundo) y el contador llega al umbral casi
-         * instantaneo con un solo click real. En ESTADO_TETRIS en cambio
-         * NO se limpia aca: se deja para que el case de abajo lo use ese
-         * mismo ciclo (rota la pieza) y lo limpie el una sola vez. */
-        if (boton_sw_pulsado && (estado_fsm == ESTADO_MONITOR || estado_fsm == ESTADO_TETRIS))
-        {
-            uint32_t ahora_click = HAL_GetTick();
-            if ((ahora_click - tick_ultimo_click_secreto) < SECRETO_VENTANA_MS)
-            {
-                clicks_secreto++;
-            }
-            else
-            {
-                clicks_secreto = 1;
-            }
-            tick_ultimo_click_secreto = ahora_click;
-
-            if (estado_fsm == ESTADO_MONITOR)
-            {
-                boton_sw_pulsado = 0;
-            }
-
-            if (clicks_secreto >= SECRETO_CLICKS)
-            {
-                clicks_secreto = 0;
-                boton_sw_pulsado = 0; /* este click ya se uso para el toggle, no debe rotar pieza */
-
-                if (estado_fsm == ESTADO_MONITOR)
-                {
-                    estado_fsm = ESTADO_TETRIS;
-                    Tetris_Iniciar();
-                }
-                else
-                {
-                    estado_fsm = ESTADO_MONITOR;
-                    tick_ultima_pantalla = 0;
-                    tick_menu_previo     = HAL_GetTick();
-                }
-            }
-        }
-
         switch (estado_fsm)
         {
             case ESTADO_INICIALIZACION:
@@ -471,22 +421,6 @@ int main(void)
                 /* ajuste de fecha con el joystick: X=mes, Y=dia, por flanco
                  * (mismo motivo de rotacion fisica que en config_rtc) */
                 RTC_AjustarFechaConJoystick();
-                break;
-
-            case ESTADO_TETRIS:
-                /* easter egg: no forma parte de la rubrica. el bloque de
-                 * arriba ya consumio el click si completaba el codigo de
-                 * salida; si llega aca con boton_sw_pulsado=1 es porque
-                 * el usuario solo dio un click normal (rota la pieza) */
-                Tetris_Actualizar(joystick_x, joystick_y, boton_sw_pulsado);
-                boton_sw_pulsado = 0;
-
-                if (Tetris_DebeSalir())
-                {
-                    estado_fsm = ESTADO_MONITOR;
-                    tick_ultima_pantalla = 0;
-                    tick_menu_previo     = HAL_GetTick();
-                }
                 break;
 
             default:
@@ -950,8 +884,7 @@ static void Enviar_Reporte(void)
              MCO_FuenteTexto(mco_fuente_actual),
              (unsigned long)HAL_RCC_GetSysClockFreq(),
              (estado_fsm == ESTADO_MONITOR) ? "MONITOR" :
-             (estado_fsm == ESTADO_CONFIG_RTC) ? "CONFIG_RTC" :
-             (estado_fsm == ESTADO_CONFIG_FECHA) ? "CONFIG_FECHA" : "TETRIS");
+             (estado_fsm == ESTADO_CONFIG_RTC) ? "CONFIG_RTC" : "CONFIG_FECHA");
 
     HAL_UART_Transmit(&huart2, (uint8_t *)buffer_tx, strlen(buffer_tx), 100);
 }
@@ -983,13 +916,16 @@ static void RTC_AplicarEntradaUsuario(void)
 /* -----------------------------------------------------------------------
  * APLICA LA FECHA TECLEADA POR EL USUARIO (comando 'F')
  * Formato esperado: "DD/MM/YY" (tambien acepta "DD MM YY" separado por
- * espacios). Si el formato no calza, se ignora y no se toca el rtc.
+ * espacios). Si el formato o el rango no calzan, se avisa por UART en vez
+ * de fallar en silencio (antes no avisaba nada, y un formato en el orden
+ * equivocado -- ej. MM/DD/YY -- se ignoraba sin explicacion).
  * El dia de la semana no se recalcula (no lo usa ninguna pantalla ni el
  * reporte), se deja fijo igual que en la inicializacion por defecto.
  * ----------------------------------------------------------------------- */
 static void RTC_AplicarFechaTecleada(void)
 {
     int dd = -1, mm = -1, yy = -1;
+    char msg[96];
 
     if (sscanf(rtc_input_buffer, "%d/%d/%d", &dd, &mm, &yy) != 3)
     {
@@ -1004,6 +940,14 @@ static void RTC_AplicarFechaTecleada(void)
         sDate.Month   = (uint8_t)mm;
         sDate.Year    = (uint8_t)yy;
         HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+        snprintf(msg, sizeof(msg), "-> Fecha actualizada: %02d/%02d/20%02d\r\n", dd, mm, yy);
+        HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), 100);
+    }
+    else
+    {
+        snprintf(msg, sizeof(msg), "-> Fecha invalida (\"%s\"). Use DD/MM/YY, ej: 27/07/26\r\n", rtc_input_buffer);
+        HAL_UART_Transmit(&huart2, (uint8_t *)msg, strlen(msg), 100);
     }
 }
 
@@ -1225,7 +1169,7 @@ static void OLED_ActualizarConfigFecha(void)
     SSD1306_UpdateScreen();
 }
 
-/* pantalla de bienvenida disparada por el click del joystick (pc0/exti0) */
+/* pantalla de bienvenida disparada por el click del joystick (pa0/exti0) */
 static void OLED_MostrarBienvenida(void)
 {
     SSD1306_Fill(0);
@@ -1296,7 +1240,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
     }
 }
 
-/* click del joystick (pc0, flanco de bajada) -> levanta la bandera que saca
+/* click del joystick (pa0, flanco de bajada) -> levanta la bandera que saca
  * a la fsm de ESTADO_BIENVENIDA hacia ESTADO_MONITOR. debounce simple por
  * software (ignora un segundo flanco si llego muy rapido detras del
  * anterior). */
