@@ -1,9 +1,8 @@
 /**
  ******************************************************************************
- * @file    stm32f4xx_it.h
- * @author  Jimmy Stebym Rosero Barrera
- * @brief   Declaraciones de ISR para Beat Clash.
- *          Aqui agrego/quito ISRs segun los perifericos que use.
+ * @file    : stm32f4xx_it.h
+ * @author  : Jimmy Stebym Rosero Barrera
+ * @brief   : Cabeceras de las rutinas de servicio de interrupcion (ISR).
  ******************************************************************************
  */
 
@@ -15,7 +14,7 @@ extern "C" {
 #endif
 
 /* ========================================================================== */
-/* === EXCEPCIONES DEL NUCLEO CORTEX-M4 ==================================== */
+/* ===== EXCEPCIONES DEL NUCLEO CORTEX-M4 =================================== */
 /* ========================================================================== */
 
 void NMI_Handler(void);
@@ -29,14 +28,11 @@ void PendSV_Handler(void);
 void SysTick_Handler(void);
 
 /* ========================================================================== */
-/* === INTERRUPCIONES DE PERIFERICOS DEL PROYECTO =========================== */
+/* ===== PERIFERICOS DEL JOYSTICK ============================================ */
 /* ========================================================================== */
 
-/* TIM5: game tick a 5ms — muestrea botones y setea input_flag              */
-void TIM5_IRQHandler(void);
-
-/* DMA2 Stream0: transferencia circular ADC1 → adc_raw[]                    */
-void DMA2_Stream0_IRQHandler(void);
+void ADC_IRQHandler(void);
+void TIM4_IRQHandler(void);
 
 #ifdef __cplusplus
 }

@@ -2,9 +2,9 @@
  ******************************************************************************
  * @file    stm32f4xx_hal_conf.h
  * @author  Jimmy Stebym Rosero Barrera
- * @brief   Configuracion del HAL para el proyecto Tarea 3.
+ * @brief   Configuracion del HAL para practica_pantalla (test ILI9341).
  *          Solo se habilitan los modulos que realmente usa el proyecto:
- *          GPIO, RCC, TIM, ADC, UART, DMA, CORTEX, FLASH, PWR, EXTI.
+ *          GPIO, RCC, SPI, CORTEX, FLASH, PWR.
  *          El resto esta comentado para reducir el tiempo de compilacion.
  ******************************************************************************
  */
@@ -21,18 +21,16 @@ extern "C" {
 /* ========================================================================== */
 
 #define HAL_MODULE_ENABLED          /* nucleo del hal, siempre requerido      */
-#define HAL_ADC_MODULE_ENABLED      /* potenciometro PA4                      */
 #define HAL_CORTEX_MODULE_ENABLED   /* nvic y systick                         */
-#define HAL_DMA_MODULE_ENABLED      /* requerido internamente por adc y uart  */
-#define HAL_EXTI_MODULE_ENABLED     /* requerido internamente por gpio        */
+#define HAL_DMA_MODULE_ENABLED      /* stm32f4xx_hal_spi.h referencia DMA_HandleTypeDef aunque no se use */
 #define HAL_FLASH_MODULE_ENABLED    /* requerido por hal_init (flash latency) */
-#define HAL_GPIO_MODULE_ENABLED     /* todos los pines del proyecto           */
+#define HAL_GPIO_MODULE_ENABLED     /* pines de control LCD (CS/DC/RST)       */
 #define HAL_PWR_MODULE_ENABLED      /* requerido por hal_init                 */
-#define HAL_RCC_MODULE_ENABLED      /* relojes y mco1                         */
-#define HAL_TIM_MODULE_ENABLED      /* tim2 encoder, tim3 pwm, tim4, tim10   */
-#define HAL_UART_MODULE_ENABLED     /* usart2 comunicacion serial             */
+#define HAL_RCC_MODULE_ENABLED      /* relojes del sistema                    */
+#define HAL_SPI_MODULE_ENABLED      /* bus SPI1 hacia el ILI9341              */
 
 /* Modulos NO usados en este proyecto — comentados para compilacion rapida   */
+#define HAL_ADC_MODULE_ENABLED      /* joystick x/y                           */
 /* #define HAL_CAN_MODULE_ENABLED    */
 /* #define HAL_CRC_MODULE_ENABLED    */
 /* #define HAL_CRYP_MODULE_ENABLED   */
@@ -40,6 +38,7 @@ extern "C" {
 /* #define HAL_DCMI_MODULE_ENABLED   */
 /* #define HAL_DMA2D_MODULE_ENABLED  */
 /* #define HAL_ETH_MODULE_ENABLED    */
+/* #define HAL_EXTI_MODULE_ENABLED   */
 /* #define HAL_HASH_MODULE_ENABLED   */
 /* #define HAL_HCD_MODULE_ENABLED    */
 /* #define HAL_I2C_MODULE_ENABLED    */
@@ -61,9 +60,9 @@ extern "C" {
 /* #define HAL_SDRAM_MODULE_ENABLED  */
 /* #define HAL_SMARTCARD_MODULE_ENABLED */
 /* #define HAL_SMBUS_MODULE_ENABLED  */
-#define HAL_SPI_MODULE_ENABLED      /* ili9341 display via spi1                */
 /* #define HAL_SRAM_MODULE_ENABLED   */
-/* #define HAL_TIM_MODULE_ENABLED    */  /* ya esta arriba */
+#define HAL_TIM_MODULE_ENABLED      /* tim3: disparador del adc cada 20 ms    */
+#define HAL_UART_MODULE_ENABLED     /* usart2: consola de depuracion por PA2/PA3 (VCP ST-Link) */
 /* #define HAL_USART_MODULE_ENABLED  */
 /* #define HAL_WWDG_MODULE_ENABLED   */
 
@@ -114,10 +113,7 @@ extern "C" {
 #define DATA_CACHE_ENABLE         1U
 
 /* Callbacks por registro: desactivados (usamos los callbacks globales HAL)  */
-#define USE_HAL_ADC_REGISTER_CALLBACKS   0U
 #define USE_HAL_SPI_REGISTER_CALLBACKS   0U
-#define USE_HAL_TIM_REGISTER_CALLBACKS   0U
-#define USE_HAL_UART_REGISTER_CALLBACKS  0U
 
 /* ========================================================================== */
 /* ============= INCLUDES DE LOS MODULOS HABILITADOS ======================= */
@@ -131,20 +127,12 @@ extern "C" {
   #include "stm32f4xx_hal_gpio.h"
 #endif
 
-#ifdef HAL_EXTI_MODULE_ENABLED
-  #include "stm32f4xx_hal_exti.h"
-#endif
-
-#ifdef HAL_DMA_MODULE_ENABLED
-  #include "stm32f4xx_hal_dma.h"
-#endif
-
 #ifdef HAL_CORTEX_MODULE_ENABLED
   #include "stm32f4xx_hal_cortex.h"
 #endif
 
-#ifdef HAL_ADC_MODULE_ENABLED
-  #include "stm32f4xx_hal_adc.h"
+#ifdef HAL_DMA_MODULE_ENABLED
+  #include "stm32f4xx_hal_dma.h"
 #endif
 
 #ifdef HAL_FLASH_MODULE_ENABLED
@@ -155,12 +143,16 @@ extern "C" {
   #include "stm32f4xx_hal_pwr.h"
 #endif
 
-#ifdef HAL_TIM_MODULE_ENABLED
-  #include "stm32f4xx_hal_tim.h"
-#endif
-
 #ifdef HAL_SPI_MODULE_ENABLED
   #include "stm32f4xx_hal_spi.h"
+#endif
+
+#ifdef HAL_ADC_MODULE_ENABLED
+  #include "stm32f4xx_hal_adc.h"
+#endif
+
+#ifdef HAL_TIM_MODULE_ENABLED
+  #include "stm32f4xx_hal_tim.h"
 #endif
 
 #ifdef HAL_UART_MODULE_ENABLED

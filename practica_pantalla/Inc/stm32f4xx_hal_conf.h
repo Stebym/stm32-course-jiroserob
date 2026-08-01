@@ -30,7 +30,7 @@ extern "C" {
 #define HAL_SPI_MODULE_ENABLED      /* bus SPI1 hacia el ILI9341              */
 
 /* Modulos NO usados en este proyecto — comentados para compilacion rapida   */
-/* #define HAL_ADC_MODULE_ENABLED    */
+#define HAL_ADC_MODULE_ENABLED      /* joystick x/y                           */
 /* #define HAL_CAN_MODULE_ENABLED    */
 /* #define HAL_CRC_MODULE_ENABLED    */
 /* #define HAL_CRYP_MODULE_ENABLED   */
@@ -61,7 +61,7 @@ extern "C" {
 /* #define HAL_SMARTCARD_MODULE_ENABLED */
 /* #define HAL_SMBUS_MODULE_ENABLED  */
 /* #define HAL_SRAM_MODULE_ENABLED   */
-/* #define HAL_TIM_MODULE_ENABLED    */
+#define HAL_TIM_MODULE_ENABLED      /* tim3: disparador del adc cada 20 ms    */
 /* #define HAL_UART_MODULE_ENABLED   */
 /* #define HAL_USART_MODULE_ENABLED  */
 /* #define HAL_WWDG_MODULE_ENABLED   */
@@ -145,6 +145,14 @@ extern "C" {
 
 #ifdef HAL_SPI_MODULE_ENABLED
   #include "stm32f4xx_hal_spi.h"
+#endif
+
+#ifdef HAL_ADC_MODULE_ENABLED
+  #include "stm32f4xx_hal_adc.h"
+#endif
+
+#ifdef HAL_TIM_MODULE_ENABLED
+  #include "stm32f4xx_hal_tim.h"
 #endif
 
 /* ========================================================================== */

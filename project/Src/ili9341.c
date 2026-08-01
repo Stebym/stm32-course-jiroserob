@@ -2,7 +2,8 @@
  ******************************************************************************
  * @file    ili9341.c
  * @author  Jimmy Stebym Rosero Barrera
- * @brief   Driver ILI9341 — inicializacion y funciones de dibujo basico.
+ * @brief   Driver ILI9341 — inicializacion y primitivas de dibujo basico
+ *          para practicas de pantalla (relleno, figuras, imagenes, texto).
  ******************************************************************************
  */
 
@@ -10,10 +11,14 @@
 #include "board_pins.h"
 
 extern SPI_HandleTypeDef hspi1;
-static uint8_t lcd_row_buf[ILI9341_W * 2];
+static uint8_t lcd_row_buf[ILI9341_MAXDIM * 2];
+
+/* Dimensiones activas segun orientacion — Init() arranca en paisaje 320x240 */
+uint16_t ILI9341_W = 320;
+uint16_t ILI9341_H = 240;
 
 /* ========================================================================== */
-/* === FUNCIONES INTERNAS =================================================== */
+/* === FUNCIONES INTERNAS DE BUS ============================================ */
 /* ========================================================================== */
 
 static void LCD_WriteCmd(uint8_t cmd) {
@@ -118,7 +123,7 @@ void ILI9341_Init(void) {
     HAL_Delay(20);
 
     /* Limpiar pantalla a negro */
-    ILI9341_FillScreen(0x0000);
+    ILI9341_FillScreen(COLOR_BLACK);
 }
 
 /* ========================================================================== */
@@ -151,7 +156,31 @@ void ILI9341_EndWrite(void) {
 }
 
 /* ========================================================================== */
-/* === DIBUJO Y ESCRITURA =================================================== */
+/* === ORIENTACION EN TIEMPO DE EJECUCION ==================================== */
+/* ========================================================================== */
+/* Reconfigura MADCTL y las dimensiones activas. Usar antes de dibujar una    */
+/* pantalla que necesite la otra orientacion (ej. modo cocktail Simon).      */
+
+void ILI9341_SetPortrait(uint8_t portrait) {
+    uint8_t madctl = portrait ? ILI9341_MADCTL_PORTRAIT : ILI9341_MADCTL_LANDSCAPE;
+    LCD_CmdData(0x36, &madctl, 1);
+
+    if (portrait) { ILI9341_W = 240; ILI9341_H = 320; }
+    else          { ILI9341_W = 320; ILI9341_H = 240; }
+}
+
+/* MY|MX (bits 7,6 de MADCTL) invertidos sobre la orientacion base -- misma
+ * dimension logica, panel fisicamente rotado 180 grados. ILI9341_W/H no
+ * cambian porque MV (swap fila/col) no se toca. */
+void ILI9341_SetFlip180(uint8_t flip) {
+    uint8_t portrait = (ILI9341_H > ILI9341_W) ? 1 : 0;
+    uint8_t madctl    = portrait ? ILI9341_MADCTL_PORTRAIT : ILI9341_MADCTL_LANDSCAPE;
+    if (flip) madctl ^= 0xC0;
+    LCD_CmdData(0x36, &madctl, 1);
+}
+
+/* ========================================================================== */
+/* === ESCRITURA DE PIXELES ================================================= */
 /* ========================================================================== */
 
 void ILI9341_WritePixels(const uint8_t *buf, uint32_t len_bytes) {
@@ -164,6 +193,10 @@ void ILI9341_WritePixels(const uint8_t *buf, uint32_t len_bytes) {
         len_bytes -= chunk;
     }
 }
+
+/* ========================================================================== */
+/* === FIGURAS BASICAS ======================================================= */
+/* ========================================================================== */
 
 void ILI9341_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
     if (!w || !h) return;
@@ -191,4 +224,194 @@ void ILI9341_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t c
 
 void ILI9341_FillScreen(uint16_t color) {
     ILI9341_FillRect(0, 0, ILI9341_W, ILI9341_H, color);
+}
+
+void ILI9341_DrawPixel(uint16_t x, uint16_t y, uint16_t color) {
+    ILI9341_FillRect(x, y, 1, 1, color);
+}
+
+void ILI9341_DrawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
+    if (!w || !h) return;
+    ILI9341_FillRect(x,         y,         w, 1, color);
+    ILI9341_FillRect(x,         y + h - 1, w, 1, color);
+    ILI9341_FillRect(x,         y,         1, h, color);
+    ILI9341_FillRect(x + w - 1, y,         1, h, color);
+}
+
+/* Bresenham clasico. Los tramos horizontales/verticales se despachan como
+ * FillRect de una fila/columna para aprovechar la rafaga SPI. */
+void ILI9341_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) {
+    if (y0 == y1) {
+        int16_t x = (x0 < x1) ? x0 : x1;
+        uint16_t w = (uint16_t)((x0 < x1) ? (x1 - x0) : (x0 - x1)) + 1;
+        if (x >= 0 && y0 >= 0) ILI9341_FillRect((uint16_t)x, (uint16_t)y0, w, 1, color);
+        return;
+    }
+    if (x0 == x1) {
+        int16_t y = (y0 < y1) ? y0 : y1;
+        uint16_t h = (uint16_t)((y0 < y1) ? (y1 - y0) : (y0 - y1)) + 1;
+        if (x0 >= 0 && y >= 0) ILI9341_FillRect((uint16_t)x0, (uint16_t)y, 1, h, color);
+        return;
+    }
+
+    int16_t dx = (int16_t)((x1 > x0) ? (x1 - x0) : (x0 - x1));
+    int16_t sx = (x0 < x1) ? 1 : -1;
+    int16_t dy = (int16_t)-((y1 > y0) ? (y1 - y0) : (y0 - y1));
+    int16_t sy = (y0 < y1) ? 1 : -1;
+    int16_t err = dx + dy;
+
+    while (1) {
+        if (x0 >= 0 && y0 >= 0) ILI9341_DrawPixel((uint16_t)x0, (uint16_t)y0, color);
+        if (x0 == x1 && y0 == y1) break;
+        int16_t e2 = (int16_t)(2 * err);
+        if (e2 >= dy) { err = (int16_t)(err + dy); x0 = (int16_t)(x0 + sx); }
+        if (e2 <= dx) { err = (int16_t)(err + dx); y0 = (int16_t)(y0 + sy); }
+    }
+}
+
+/* Circulo de punto medio (Bresenham) — solo contorno, 8 octantes por simetria. */
+void ILI9341_DrawCircle(int16_t xc, int16_t yc, int16_t r, uint16_t color) {
+    int16_t x = r, y = 0, err = 0;
+
+    while (x >= y) {
+        if (xc + x >= 0 && yc + y >= 0) ILI9341_DrawPixel((uint16_t)(xc + x), (uint16_t)(yc + y), color);
+        if (xc + y >= 0 && yc + x >= 0) ILI9341_DrawPixel((uint16_t)(xc + y), (uint16_t)(yc + x), color);
+        if (xc - y >= 0 && yc + x >= 0) ILI9341_DrawPixel((uint16_t)(xc - y), (uint16_t)(yc + x), color);
+        if (xc - x >= 0 && yc + y >= 0) ILI9341_DrawPixel((uint16_t)(xc - x), (uint16_t)(yc + y), color);
+        if (xc - x >= 0 && yc - y >= 0) ILI9341_DrawPixel((uint16_t)(xc - x), (uint16_t)(yc - y), color);
+        if (xc - y >= 0 && yc - x >= 0) ILI9341_DrawPixel((uint16_t)(xc - y), (uint16_t)(yc - x), color);
+        if (xc + y >= 0 && yc - x >= 0) ILI9341_DrawPixel((uint16_t)(xc + y), (uint16_t)(yc - x), color);
+        if (xc + x >= 0 && yc - y >= 0) ILI9341_DrawPixel((uint16_t)(xc + x), (uint16_t)(yc - y), color);
+
+        y++;
+        if (err <= 0) { err += 2 * y + 1; }
+        if (err > 0)  { x--; err -= 2 * x + 1; }
+    }
+}
+
+/* Circulo relleno — barrido de lineas horizontales entre los bordes de cada fila. */
+void ILI9341_FillCircle(int16_t xc, int16_t yc, int16_t r, uint16_t color) {
+    for (int16_t y = -r; y <= r; y++) {
+        int16_t dx = (int16_t)((int32_t)r * r - (int32_t)y * y);
+        /* raiz entera aproximada por busqueda lineal (r es pequeño en pantalla) */
+        int16_t half = 0;
+        while ((half + 1) * (half + 1) <= dx) half++;
+        int16_t yy = (int16_t)(yc + y);
+        if (yy < 0) continue;
+        int16_t xx0 = (int16_t)(xc - half);
+        if (xx0 < 0) xx0 = 0;
+        uint16_t w = (uint16_t)(2 * half + 1);
+        ILI9341_FillRect((uint16_t)xx0, (uint16_t)yy, w, 1, color);
+    }
+}
+
+/* ========================================================================== */
+/* === IMAGENES ============================================================== */
+/* ========================================================================== */
+
+void ILI9341_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t *data) {
+    if (!w || !h) return;
+    if (x >= ILI9341_W || y >= ILI9341_H) return;
+    if ((uint32_t)x + w > ILI9341_W) w = ILI9341_W - x;
+    if ((uint32_t)y + h > ILI9341_H) h = ILI9341_H - y;
+
+    ILI9341_SetWindow(x, y, x + w - 1, y + h - 1);
+    ILI9341_WritePixels(data, (uint32_t)w * h * 2);
+    ILI9341_EndWrite();
+}
+
+/* ========================================================================== */
+/* === FUENTE BITMAP 5x7 (ASCII 32-90) ======================================= */
+/* ========================================================================== */
+/* Cada char: 5 bytes (columnas izq→der). Cada byte: bit0=fila top, bit6=bot. */
+
+static const uint8_t font5x7[][5] = {
+    {0x00,0x00,0x00,0x00,0x00}, /* ' ' 32 */
+    {0x00,0x00,0x5F,0x00,0x00}, /* '!' 33 */
+    {0x00,0x07,0x00,0x07,0x00}, /* '"' 34 */
+    {0x14,0x7F,0x14,0x7F,0x14}, /* '#' 35 */
+    {0x24,0x2A,0x7F,0x2A,0x12}, /* '$' 36 */
+    {0x23,0x13,0x08,0x64,0x62}, /* '%' 37 */
+    {0x36,0x49,0x55,0x22,0x50}, /* '&' 38 */
+    {0x00,0x05,0x03,0x00,0x00}, /* ''' 39 */
+    {0x00,0x1C,0x22,0x41,0x00}, /* '(' 40 */
+    {0x00,0x41,0x22,0x1C,0x00}, /* ')' 41 */
+    {0x08,0x2A,0x1C,0x2A,0x08}, /* '*' 42 */
+    {0x08,0x08,0x3E,0x08,0x08}, /* '+' 43 */
+    {0x00,0x50,0x30,0x00,0x00}, /* ',' 44 */
+    {0x08,0x08,0x08,0x08,0x08}, /* '-' 45 */
+    {0x00,0x60,0x60,0x00,0x00}, /* '.' 46 */
+    {0x20,0x10,0x08,0x04,0x02}, /* '/' 47 */
+    {0x3E,0x51,0x49,0x45,0x3E}, /* '0' 48 */
+    {0x00,0x42,0x7F,0x40,0x00}, /* '1' 49 */
+    {0x42,0x61,0x51,0x49,0x46}, /* '2' 50 */
+    {0x21,0x41,0x45,0x4B,0x31}, /* '3' 51 */
+    {0x18,0x14,0x12,0x7F,0x10}, /* '4' 52 */
+    {0x27,0x45,0x45,0x45,0x39}, /* '5' 53 */
+    {0x3C,0x4A,0x49,0x49,0x30}, /* '6' 54 */
+    {0x01,0x71,0x09,0x05,0x03}, /* '7' 55 */
+    {0x36,0x49,0x49,0x49,0x36}, /* '8' 56 */
+    {0x06,0x49,0x49,0x29,0x1E}, /* '9' 57 */
+    {0x00,0x36,0x36,0x00,0x00}, /* ':' 58 */
+    {0x00,0x56,0x36,0x00,0x00}, /* ';' 59 */
+    {0x08,0x14,0x22,0x41,0x00}, /* '<' 60 */
+    {0x14,0x14,0x14,0x14,0x14}, /* '=' 61 */
+    {0x00,0x41,0x22,0x14,0x08}, /* '>' 62 */
+    {0x02,0x01,0x51,0x09,0x06}, /* '?' 63 */
+    {0x32,0x49,0x79,0x41,0x3E}, /* '@' 64 */
+    {0x7E,0x11,0x11,0x11,0x7E}, /* 'A' 65 */
+    {0x7F,0x49,0x49,0x49,0x36}, /* 'B' 66 */
+    {0x3E,0x41,0x41,0x41,0x22}, /* 'C' 67 */
+    {0x7F,0x41,0x41,0x22,0x1C}, /* 'D' 68 */
+    {0x7F,0x49,0x49,0x49,0x41}, /* 'E' 69 */
+    {0x7F,0x09,0x09,0x09,0x01}, /* 'F' 70 */
+    {0x3E,0x41,0x49,0x49,0x7A}, /* 'G' 71 */
+    {0x7F,0x08,0x08,0x08,0x7F}, /* 'H' 72 */
+    {0x00,0x41,0x7F,0x41,0x00}, /* 'I' 73 */
+    {0x20,0x40,0x41,0x3F,0x01}, /* 'J' 74 */
+    {0x7F,0x08,0x14,0x22,0x41}, /* 'K' 75 */
+    {0x7F,0x40,0x40,0x40,0x40}, /* 'L' 76 */
+    {0x7F,0x02,0x0C,0x02,0x7F}, /* 'M' 77 */
+    {0x7F,0x04,0x08,0x10,0x7F}, /* 'N' 78 */
+    {0x3E,0x41,0x41,0x41,0x3E}, /* 'O' 79 */
+    {0x7F,0x09,0x09,0x09,0x06}, /* 'P' 80 */
+    {0x3E,0x41,0x51,0x21,0x5E}, /* 'Q' 81 */
+    {0x7F,0x09,0x19,0x29,0x46}, /* 'R' 82 */
+    {0x46,0x49,0x49,0x49,0x31}, /* 'S' 83 */
+    {0x01,0x01,0x7F,0x01,0x01}, /* 'T' 84 */
+    {0x3F,0x40,0x40,0x40,0x3F}, /* 'U' 85 */
+    {0x1F,0x20,0x40,0x20,0x1F}, /* 'V' 86 */
+    {0x3F,0x40,0x38,0x40,0x3F}, /* 'W' 87 */
+    {0x63,0x14,0x08,0x14,0x63}, /* 'X' 88 */
+    {0x07,0x08,0x70,0x08,0x07}, /* 'Y' 89 */
+    {0x61,0x51,0x49,0x45,0x43}, /* 'Z' 90 */
+};
+
+void ILI9341_DrawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg, uint8_t scale) {
+    if (c >= 'a' && c <= 'z') c = (char)(c - 32);   /* minusculas -> mayusculas */
+    if (c < 32 || c > 90) c = '?';
+    const uint8_t *g = font5x7[(uint8_t)c - 32];
+
+    uint16_t adv = (uint16_t)(6u * scale);
+    uint16_t hgt = (uint16_t)(7u * scale);
+    ILI9341_FillRect(x, y, adv, hgt, bg);
+
+    for (uint8_t col = 0; col < 5; col++) {
+        uint8_t bits = g[col];
+        for (uint8_t row = 0; row < 7; row++) {
+            if (bits & (1u << row)) {
+                ILI9341_FillRect((uint16_t)(x + col * scale),
+                                 (uint16_t)(y + row * scale),
+                                 scale, scale, fg);
+            }
+        }
+    }
+}
+
+void ILI9341_DrawString(uint16_t x, uint16_t y, const char *s, uint16_t fg, uint16_t bg, uint8_t scale) {
+    while (*s) {
+        ILI9341_DrawChar(x, y, *s, fg, bg, scale);
+        x = (uint16_t)(x + 6u * scale);
+        s++;
+    }
 }

@@ -28,8 +28,92 @@ void Renderer_Update(GameState_t *gs);
 /* Dibujar la pantalla de splash */
 void Renderer_DrawSplash(void);
 
-/* Dibujar el menu de seleccion de nivel */
+/* Dibujar el menu de seleccion de nivel (velocidad, legado) -- pantalla de
+ * la primera version del proyecto, anterior a introducir la seleccion de
+ * cantidad de jugadores y de modo de juego. Se conserva sin usar en el
+ * recorrido actual por si se retoma el ajuste de dificultad por niveles. */
 void Renderer_DrawMenu(uint8_t cursor);
+
+/* Dibujar la pantalla de "cuantos jugadores" (0=1 jugador, 1=2 jugadores) */
+void Renderer_DrawSeleccionJugadores(uint8_t cursor);
+
+/* Mueve el cursor de seleccion de jugadores sin FillScreen — solo repinta
+ * las 2 tarjetas que cambian de estado (evita el parpadeo al navegar). */
+void Renderer_UpdateSeleccionJugadores(uint8_t cursor_ant, uint8_t cursor);
+
+/* Nombre de 3 letras elegido por el jugador (ver DEMO_INICIALES en main.c) --
+ * implementada en main.c, expuesta aca para que las funciones Cockpit_* de
+ * abajo puedan mostrarlo en vez de un generico "J1"/"J2". */
+const char *Nombre_Jugador(uint8_t jugador);
+
+/* Pantalla de entrada de iniciales (3 letras): joystick arriba/abajo cambia
+ * la letra A-Z de la posicion actual, cualquier boton confirma esa
+ * posicion (logica en main.c, MenuIniciales_Procesar). nombre: 3 letras +
+ * terminador nulo. pos_actual: 0-2, cual letra esta resaltada (amarillo). */
+void Renderer_DrawNombre(uint8_t jugador, const char nombre[4], uint8_t pos_actual);
+/* Redibuja SOLO la letra en `pos` (mientras se cicla A-Z), resaltada como
+ * "en edicion" (amarillo). */
+void Renderer_UpdateNombreLetra(uint8_t jugador, uint8_t pos, char letra);
+/* Redibuja la letra en `pos` como "ya confirmada" (gris, no editable). */
+void Renderer_ConfirmarNombreLetra(uint8_t pos, char letra);
+
+/* Dibujar el menu de seleccion de modo (0=Simon, 1=Simon+Joystick, 2=Guitar Hero) */
+void Renderer_DrawSeleccionModo(uint8_t cursor);
+
+/* Mueve el cursor de seleccion de modo sin FillScreen — solo repinta las
+ * tarjetas que cambian de estado y el texto de descripcion. */
+void Renderer_UpdateSeleccionModo(uint8_t cursor_ant, uint8_t cursor);
+
+/* Vista previa de modo Simon Clasico — paso_activo 0-3 encendido, 0xFF ninguno */
+void Renderer_DrawModoSimonClasico(uint8_t paso_j1, uint8_t paso_j2);
+/* Redibuja SOLO un jugador (etiqueta + cuadricula 2x2) sin tocar al otro --
+ * usar al reiniciar un jugador que perdio. */
+void Renderer_DrawModoSimonClasicoJugador(uint8_t jugador, uint8_t paso);
+void Renderer_UpdateModoSimonClasicoPaso(uint8_t jugador, uint8_t paso_ant, uint8_t paso);
+void Renderer_ActualizarRachaBotones(uint8_t jugador, uint16_t racha);
+void Renderer_DibujarGameOverBotones(uint8_t jugador, uint16_t racha, uint16_t mejor);
+
+/* Simon+Joystick a 2 jugadores cara a cara (portrait, cockpit) -- cada
+ * jugador juega su PROPIA secuencia independiente en su mitad de la mesa,
+ * con el mismo mecanismo de rotacion 180 grados que Simon Clasico. Llamar
+ * con ILI9341_SetPortrait(1) ya activado. */
+void Renderer_DrawModoSimonJoystick2P(uint8_t paso_j1, uint8_t paso_j2);
+/* Redibuja SOLO un jugador (etiqueta + 4 badges) -- usar al reiniciar un
+ * jugador que perdio, sin tocar la partida en curso del otro. */
+void Renderer_DrawModoSimonJoystick2PJugador(uint8_t jugador, uint8_t paso);
+void Renderer_UpdateModoSimonJoystick2PPaso(uint8_t jugador, uint8_t paso_ant, uint8_t paso);
+void Renderer_ActualizarRachaJoystick2P(uint8_t jugador, uint16_t racha);
+void Renderer_DibujarGameOverJoystick2P(uint8_t jugador, uint16_t racha, uint16_t mejor);
+
+/* Cursor "X" por jugador (mismo cursor que la version de 1 jugador, uno
+ * independiente por mitad) -- para verificar a simple vista que cada lado
+ * mueve el joystick fisico correcto. joy_x/joy_y: cuenta cruda del adc. */
+void Renderer_ActualizarCursorJoystick2P(uint8_t jugador, uint16_t joy_x, uint16_t joy_y, uint8_t listo);
+void Renderer_ResetCursorJoystick2P(uint8_t jugador);
+
+
+/* Version a pantalla completa para 1 solo jugador (mientras no haya 2do
+ * joystick conectado) — D-pad grande y centrado, sin dividir la pantalla. */
+void Renderer_DrawModoSimonJoystick1P(uint8_t paso);
+void Renderer_UpdateModoSimonJoystick1P(uint8_t paso_ant, uint8_t paso);
+
+/* Cursor "X" que sigue la posicion cruda del joystick (como en examen_parcial),
+ * dentro del hueco del centro del D-pad de 1 jugador. joy_x/joy_y: cuenta
+ * cruda del adc (0-4095). listo: verde si el joystick esta centrado (armado
+ * para el siguiente movimiento), gris si sigue inclinado. */
+void Renderer_ActualizarCursorJoystick(uint16_t joy_x, uint16_t joy_y, uint8_t listo);
+
+/* Olvida la ultima posicion dibujada del cursor -- llamar al reiniciar el
+ * juego para que el proximo Renderer_ActualizarCursorJoystick no intente
+ * borrar una posicion de una partida anterior. */
+void Renderer_ResetCursorJoystick(void);
+
+/* Lista de canciones tipo "reproductor" -- 6 items, navegable con el eje Y
+ * del joystick. cursor: indice 0-5. El ORDEN debe coincidir exactamente con
+ * CANCIONES_NOMBRE/DATA/LEN en main.c (BIENVENIDA, ESTRELLITA, HIMNO
+ * ALEGRIA, MARTINILLO, NAVIDAD, TETRIS). */
+void Renderer_DrawListaCanciones(uint8_t cursor);
+void Renderer_UpdateListaCanciones(uint8_t cursor_ant, uint8_t cursor);
 
 /* Dibujar el conteo regresivo 3-2-1-GO */
 void Renderer_DrawConteo(uint8_t numero);
@@ -46,5 +130,34 @@ void Renderer_FlashPressZone(uint8_t jugador, uint8_t carril, uint16_t color);
 /* Dibujar o borrar una nota — aqui se aplica el render delta               */
 void Renderer_DrawNota(const Nota_t *nota, uint16_t x_off);
 void Renderer_EraseNotaTrail(const Nota_t *nota, uint16_t x_off, uint8_t speed);
+
+/* ========================================================================== */
+/* === GUITAR HERO — CARA A CARA (portrait, cockpit) ========================= */
+/* ========================================================================== */
+/* Mismo mecanismo cara-a-cara (portrait, mitad de arriba rotada 180) que
+ * Renderer_DrawModoSimon* arriba. Restyle inspirado en video_box/video_ellipse
+ * del repo FPGA de referencia (ver guitar_hero/ANALISIS_REFERENCIA.md):
+ * carril = barra angosta de color sobre fondo negro, zona de golpe = circulo
+ * relleno. Llamar con ILI9341_SetPortrait(1) ya activado. */
+
+/* Dimensiones de cada mitad "cockpit" (retrato dividido a la mitad) --
+ * deben coincidir con COCK_ZONE_W/H en renderer.c. */
+#define COCKPIT_ZONE_W  240
+#define COCKPIT_ZONE_H  155
+
+/* Centro X LOCAL de la zona de golpe circular de cada carril -- debe
+ * coincidir con GH_ZONA_CX en renderer.c. Expuesto para que main.c calcule
+ * la distancia de un golpe sin duplicar el numero magico en 2 archivos sin
+ * relacion directa entre si. */
+#define GH_ZONA_CX  16
+
+void Renderer_DrawModoGuitarHero2P(void);
+/* Redibuja SOLO un jugador (etiqueta + 4 carriles) -- usar tanto para el
+ * dibujo inicial de 1 jugador como para arrancar una ronda nueva. */
+void Renderer_DrawModoGuitarHeroJugador(uint8_t jugador);
+void Renderer_GH_DrawNota(uint8_t jugador, const Nota_t *nota);
+void Renderer_GH_EraseNotaTrail(uint8_t jugador, const Nota_t *nota, uint8_t speed);
+void Renderer_GH_ActualizarPuntaje(uint8_t jugador, uint16_t puntaje, uint16_t combo);
+void Renderer_GH_DibujarFin(uint8_t jugador, uint16_t puntaje);
 
 #endif /* __RENDERER_H */

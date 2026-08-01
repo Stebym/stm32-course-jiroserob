@@ -212,6 +212,11 @@ static uint32_t tick_ultimo_reporte_continuo = 0;
 static uint16_t ultimo_reporte_x = 0xFFFF; /* valor imposible: fuerza el primer envio */
 static uint16_t ultimo_reporte_y = 0xFFFF;
 
+/* click del joystick dentro de ESTADO_MONITOR: alterna si "Joy X"/"Joy Y"
+ * en el oled se muestran como cuenta cruda del adc (0-4095) o ya
+ * convertidas a milivoltios (ver ADC_CuentaAMilivoltios) */
+static uint8_t mostrar_mv = 0;
+
 /* ajuste de hora con el joystick dentro de ESTADO_CONFIG_RTC:
  * eje Y (arriba/abajo) mueve minutos, eje X (izq/der) mueve horas.
  * cada paso es "por flanco" -- hay que volver al centro antes de que
@@ -249,6 +254,7 @@ static void UART2_Init_Manual(void);
 static void RTC_Init_Manual(void);
 static void MCO1_SetSource(MCO_Fuente_t fuente);
 static const char *MCO_FuenteTexto(MCO_Fuente_t fuente);
+static uint16_t ADC_CuentaAMilivoltios(uint16_t cuenta);
 static void Procesar_Comando(char c);
 static void Enviar_Reporte(void);
 static void Enviar_Menu_Ayuda(void);
@@ -305,6 +311,14 @@ int main(void)
                 {
                     serial_nuevo = 0;
                     Procesar_Comando((char)rx_data[0]);
+                }
+
+                /* click del joystick: alterna la vista de Joy X/Joy Y en el
+                 * oled entre cuenta cruda del adc y milivoltios */
+                if (boton_sw_pulsado)
+                {
+                    boton_sw_pulsado = 0;
+                    mostrar_mv = !mostrar_mv;
                 }
 
                 /* recordatorio periodico del menu de ayuda, cada 30 s */
@@ -762,6 +776,19 @@ static const char *MCO_FuenteTexto(MCO_Fuente_t fuente)
 }
 
 /* -----------------------------------------------------------------------
+ * CONVIERTE UNA CUENTA CRUDA DEL ADC (0-4095, 12 bits) A MILIVOLTIOS
+ * VREF+ de la Nucleo esta conectado a la alimentacion de 3.3V, asi que
+ * la cuenta se escala linealmente: mV = cuenta * 3300 / 4095.
+ * Con el joystick centrado (cuenta ~2048) da ~1650mV, es decir ~VCC/2 --
+ * tiene sentido porque el joystick es un potenciometro (divisor de
+ * voltaje) que en el centro parte la alimentacion exactamente a la mitad.
+ * ----------------------------------------------------------------------- */
+static uint16_t ADC_CuentaAMilivoltios(uint16_t cuenta)
+{
+    return (uint16_t)(((uint32_t)cuenta * 3300U) / 4095U);
+}
+
+/* -----------------------------------------------------------------------
  * COMANDOS DE LA CONSOLA SERIAL (6 comandos individuales verificables)
  * ----------------------------------------------------------------------- */
 static void Procesar_Comando(char c)
@@ -865,7 +892,7 @@ static void Enviar_Reporte(void)
 {
     RTC_TimeTypeDef sTime = {0};
     RTC_DateTypeDef sDate = {0};
-    char buffer_tx[220];
+    char buffer_tx[380];
 
     /* hay que leer siempre time y date juntos para desbloquear el shadow register */
     HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
@@ -874,13 +901,15 @@ static void Enviar_Reporte(void)
     snprintf(buffer_tx, sizeof(buffer_tx),
              "\r\n=== REPORTE DEL SISTEMA ===\r\n"
              "  Fecha/Hora RTC : 20%02u-%02u-%02u  %02u:%02u:%02u\r\n"
-             "  Joystick       : X=%4u  Y=%4u\r\n"
+             "  Joystick       : X=%4u  Y=%4u  (cuentas ADC de 0 a 4095)\r\n"
+             "  Joystick (mV)  : X=%4u  Y=%4u  (VREF+=3.3V, mV = cuenta*3300/4095)\r\n"
              "  MCO1 (PA8)     : %s\r\n"
              "  SYSCLK         : %lu Hz\r\n"
              "  Estado FSM     : %s\r\n\r\n",
              sDate.Year, sDate.Month, sDate.Date,
              sTime.Hours, sTime.Minutes, sTime.Seconds,
-             joystick_x, joystick_y,
+             joystick_y, joystick_x, /* invertido a proposito: ver nota en OLED_ActualizarMonitor */
+             ADC_CuentaAMilivoltios(joystick_y), ADC_CuentaAMilivoltios(joystick_x),
              MCO_FuenteTexto(mco_fuente_actual),
              (unsigned long)HAL_RCC_GetSysClockFreq(),
              (estado_fsm == ESTADO_MONITOR) ? "MONITOR" :
@@ -1089,10 +1118,26 @@ static void OLED_ActualizarMonitor(void)
              sDate.Year, sDate.Month, sDate.Date);
     SSD1306_WriteString(0, 0, linea);
 
-    snprintf(linea, sizeof(linea), "Joy X:%4u", joystick_x);
-    SSD1306_WriteString(0, 16, linea);
-    snprintf(linea, sizeof(linea), "Joy Y:%4u", joystick_y);
-    SSD1306_WriteString(0, 26, linea);
+    /* etiquetas invertidas a proposito: "Joy X" muestra joystick_y y
+     * "Joy Y" muestra joystick_x, para que coincidan con la sensacion
+     * fisica real del joystick montado rotado 90 grados en la protoboard
+     * (mismo motivo que el cursor y los menus de ajuste de hora/fecha) */
+    /* click del joystick alterna mostrar_mv: cuenta cruda del adc, o ya
+     * convertida a milivoltios con ADC_CuentaAMilivoltios() */
+    if (mostrar_mv)
+    {
+        snprintf(linea, sizeof(linea), "Joy X:%4umV", ADC_CuentaAMilivoltios(joystick_y));
+        SSD1306_WriteString(0, 16, linea);
+        snprintf(linea, sizeof(linea), "Joy Y:%4umV", ADC_CuentaAMilivoltios(joystick_x));
+        SSD1306_WriteString(0, 26, linea);
+    }
+    else
+    {
+        snprintf(linea, sizeof(linea), "Joy X:%4u", joystick_y);
+        SSD1306_WriteString(0, 16, linea);
+        snprintf(linea, sizeof(linea), "Joy Y:%4u", joystick_x);
+        SSD1306_WriteString(0, 26, linea);
+    }
 
     SSD1306_WriteString(0, 42, "Estado: MONITOR");
 

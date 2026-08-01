@@ -2,7 +2,8 @@
  ******************************************************************************
  * @file    game_state.h
  * @author  Jimmy Stebym Rosero Barrera
- * @brief   Tipos de datos y estado global para Beat Clash.
+ * @brief   Tipos de datos y estado global para Beat Clash — copia de trabajo
+ *          en practica_pantalla/ para iterar el diseño visual del display.
  *          Aqui puedo cambiar la dificultad, numero de notas y velocidades.
  ******************************************************************************
  */
@@ -160,32 +161,36 @@ typedef struct {
 /* ========================================================================== */
 /* === COLORES RGB565 ======================================================= */
 /* ========================================================================== */
-/* MADCTL=0x28: BGR=1 — este modulo ILI9341 invierte R y B fisicamente.      */
-/* Regla: para mostrar color (r,g,b) enviar valor = (b<<11)|(g<<5)|r         */
+/* NOTA (2026-07-13): en el panel real, RGB565 estandar se ve correcto        */
+/* (rojo=rojo, azul=azul) — confirmado con Prueba 1 en practica_pantalla/.    */
+/* Estos valores YA NO llevan el intercambio R/B que tenia el archivo         */
+/* original de project/Inc/game_state.h (ese intercambio compensaba un       */
+/* supuesto BGR fisico que resulto no aplicar aqui). Si se porta este        */
+/* archivo de vuelta al proyecto principal, corregir alla tambien.           */
 
-#define COLOR_BLACK     0x0000           /* sin cambio */
-#define COLOR_WHITE     0xFFFF           /* sin cambio */
-#define COLOR_RED       0x001F           /* B-bits=31 → pantalla R=31 */
-#define COLOR_GREEN     0x07E0           /* solo G, sin cambio */
-#define COLOR_BLUE      0xF800           /* R-bits=31 → pantalla B=31 */
-#define COLOR_YELLOW    0x07FF           /* G=63,B=31 → pantalla R=31,G=63 */
-#define COLOR_CYAN      0xFFE0           /* R=31,G=63 → pantalla G=63,B=31 */
-#define COLOR_MAGENTA   0xF81F           /* sin cambio (R=B=31 simetrico) */
-#define COLOR_ORANGE    0x053F           /* G=41,B=31 → pantalla R=31,G=41 */
-#define COLOR_GRAY      0x8410           /* sin cambio (R=B=16 simetrico) */
-#define COLOR_DARKGRAY  0x2104           /* sin cambio (R=B=4 simetrico) */
+#define COLOR_BLACK     0x0000
+#define COLOR_WHITE     0xFFFF
+#define COLOR_RED       0xF800
+#define COLOR_GREEN     0x07E0
+#define COLOR_BLUE      0x001F
+#define COLOR_YELLOW    0xFFE0
+#define COLOR_CYAN      0x07FF
+#define COLOR_MAGENTA   0xF81F
+#define COLOR_ORANGE    0xFD20
+#define COLOR_GRAY      0x8410
+#define COLOR_DARKGRAY  0x2104
 
 /* Colores de fondo de carril (versiones oscuras para contraste con las notas) */
-#define COLOR_LANE_R    0x0002           /* B=1 → pantalla R=1 (rojo oscuro) */
-#define COLOR_LANE_G    0x0060           /* G=3, sin cambio (verde oscuro)    */
-#define COLOR_LANE_B    0x1800           /* R=3 → pantalla B=3 (azul oscuro)  */
-#define COLOR_LANE_Y    0x0042           /* G=2,B=2 → pantalla R=2,G=2 (amarillo oscuro) */
+#define COLOR_LANE_R    0x1000
+#define COLOR_LANE_G    0x0060
+#define COLOR_LANE_B    0x0003
+#define COLOR_LANE_Y    0x1040
 
 /* Colores de la zona de presion */
-#define COLOR_PRESS_R   0x000A           /* B=10 → pantalla R=10 */
-#define COLOR_PRESS_G   0x0180           /* G=12, sin cambio */
-#define COLOR_PRESS_B   0x6000           /* R=12 → pantalla B=12 */
-#define COLOR_PRESS_Y   0x012A           /* G=9,B=10 → pantalla R=10,G=9 */
+#define COLOR_PRESS_R   0x5000
+#define COLOR_PRESS_G   0x0180
+#define COLOR_PRESS_B   0x000C
+#define COLOR_PRESS_Y   0x5120
 
 /* Colores segun carril — para acceso por indice */
 static const uint16_t NOTE_COLOR[4]  = {COLOR_RED,     COLOR_GREEN,   COLOR_BLUE,    COLOR_YELLOW};
