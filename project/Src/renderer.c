@@ -297,7 +297,7 @@ void Renderer_DrawBackground(const GameState_t *gs) {   // dibuja el fondo compl
 /* ========================================================================== */
 
 void Renderer_DrawSplash(void) {   // dibuja la pantalla de bienvenida (imagen de fondo + credito + instruccion)
-    /* Fondo: "NEON RIFF" generada por IA, recortada 1024x768 y reescalada a
+    /* Fondo: "NEON RIFF", recortada 1024x768 y reescalada a
      * 320x240 (ver splash_bg.h) — ya trae su propio titulo y panel Simon,
      * asi que no hace falta redibujar iconos/franjas/rejilla encima. */
     ILI9341_DrawImage(0, 0, LCD_W, LCD_H, splash_bg);  // vuelca la imagen completa de fondo, pixel por pixel, sobre toda la pantalla
