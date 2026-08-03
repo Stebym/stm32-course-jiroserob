@@ -75,14 +75,6 @@
 #define SCORE_GOOD      50
 #define SCORE_OK        25
 
-/* Notas "sostenidas" de Guitar Hero: en vez de golpearse en un instante, hay
- * que mantener presionado el color correcto mientras la nota permanece fija
- * en la zona de golpe. El puntaje se acredita en proporcion al tiempo
- * sostenido (no todo o nada), asi que soltar antes de tiempo igual paga lo
- * que se alcanzo a sostener. */
-#define GH_SOSTENIDA_DURACION_MS  2000U   /* ms que hay que sostenerla completa para el bonus maximo */
-#define SCORE_SOSTENIDA_POR_SEG   10U     /* puntos acreditados por cada segundo sostenido */
-
 /* ========================================================================== */
 /* === TIMING DEL LOOP ====================================================== */
 /* ========================================================================== */
@@ -113,10 +105,6 @@ typedef struct {
     uint8_t  golpeada;     /* 1=ya fue presionada exitosamente               */
     uint8_t  erased;       /* 1=ya se borro de la pantalla                   */
     int16_t  x_prev;       /* posicion anterior para el render delta         */
-    uint8_t  sostenida;    /* 1=nota larga: hay que MANTENER presionado el
-                               color mientras esta fija en la zona de golpe,
-                               en vez de un solo toque (ver
-                               GH_SOSTENIDA_DURACION_MS en main.c)           */
 } Nota_t;
 
 typedef struct {

@@ -83,6 +83,14 @@ void Renderer_UpdateModoSimonClasicoPaso(uint8_t jugador, uint8_t paso_ant, uint
 void Renderer_ActualizarRachaBotones(uint8_t jugador, uint16_t racha);
 void Renderer_DibujarGameOverBotones(uint8_t jugador, uint16_t racha, uint16_t mejor);
 
+/* Modo Simon Botones a PANTALLA COMPLETA para 1 jugador (retrato 240x320,
+ * sin dividir) -- 4 domos gigantes en cuadricula 2x2, mismo espiritu que
+ * Renderer_DrawModoSimonJoystick1P. Usar en vez de las 2 funciones de
+ * arriba cuando btn_modo_1p este activo (ver Botones_ReiniciarJugador en
+ * main.c). */
+void Renderer_DrawModoSimonClasico1P(uint8_t paso);
+void Renderer_UpdateModoSimonClasico1PPaso(uint8_t paso_ant, uint8_t paso);
+
 /* Simon+Joystick a 2 jugadores cara a cara (portrait, cockpit) -- cada
  * jugador juega su PROPIA secuencia independiente en su mitad de la mesa,
  * con el mismo mecanismo de rotacion 180 grados que Simon Clasico. Llamar
@@ -161,6 +169,29 @@ void Renderer_EraseNotaTrail(const Nota_t *nota, uint16_t x_off, uint8_t speed);
  * relacion directa entre si. */
 #define GH_ZONA_CX  16
 
+/* Radios de la zona de golpe y de las notas, en los 2 layouts de Guitar
+ * Hero (2 jugadores/cockpit y 1 jugador/pantalla completa) -- deben
+ * coincidir con GH_ZONA_R/GH_NOTE_R/GH1P_ZONA_R/GH1P_NOTE_R en renderer.c.
+ * Expuestos para que main.c pueda calcular a que distancia una nota
+ * "toca" visualmente la zona de golpe (radio zona + radio nota) sin
+ * duplicar los numeros magicos -- ver GH_HIT_OK_2P/GH_HIT_OK_1P mas abajo. */
+#define GH_ZONA_R    13   // radio de la zona de golpe en el layout de 2 jugadores
+#define GH_NOTE_R    12   // radio de las notas en el layout de 2 jugadores
+#define GH1P_ZONA_R  24   // radio de la zona de golpe en el layout de 1 jugador (pantalla completa)
+#define GH1P_NOTE_R  22   // radio de las notas en el layout de 1 jugador (pantalla completa)
+
+/* Distancia entre centros a la que la nota y la zona de golpe EMPIEZAN a
+ * tocarse visualmente (suma de radios) -- usada como ventana "OK" (el
+ * golpe de menor puntaje, pero todavia valido) del hit-test de main.c, para
+ * que un golpe cuente apenas la nota entra en contacto con el circulo, sin
+ * tener que esperar a que este mas centrada. Cada modo usa su propia
+ * constante porque el layout de 1 jugador tiene circulos mucho mas grandes
+ * (ver GH1P_ZONA_R/GH1P_NOTE_R arriba) -- un umbral fijo compartido con 2
+ * jugadores dejaba el modo 1P sintiendose poco responsivo (la nota tocaba
+ * el circulo antes de que el golpe se aceptara). */
+#define GH_HIT_OK_2P   (GH_ZONA_R   + GH_NOTE_R)     // 13+12 = 25px
+#define GH_HIT_OK_1P   (GH1P_ZONA_R + GH1P_NOTE_R)   // 24+22 = 46px
+
 void Renderer_DrawModoGuitarHero2P(void);
 /* Redibuja SOLO un jugador (etiqueta + 4 carriles) -- usar tanto para el
  * dibujo inicial de 1 jugador como para arrancar una ronda nueva. */
@@ -177,14 +208,19 @@ void Renderer_GH_DibujarFin(uint8_t jugador, uint16_t puntaje);
 void Renderer_GH_FlashZona(uint8_t jugador, uint8_t carril);
 void Renderer_GH_ActualizarFlashes(uint8_t jugador);
 
-/* Nota sostenida (ver GH_SOSTENIDA_DURACION_MS en game_state.h): la nota
- * queda fija en la zona de golpe mientras se mantiene presionado su color,
- * y este dibujo dilata su nucleo blanco (0-100% de GH_NOTE_R) segun cuanto
- * lleva sostenida, dando una sensacion de "ir llenandola". Llamar en cada
- * tick mientras dure el sostenido. Al terminar (completa o cortada), llamar
- * a Renderer_GH_TerminarSostenida para restaurar el estilo normal de la
- * zona de golpe de ese carril (la nota ya no se dibuja mas). */
-void Renderer_GH_DrawNotaSostenida(uint8_t jugador, const Nota_t *nota, uint8_t progreso_pct);
-void Renderer_GH_TerminarSostenida(uint8_t jugador, uint8_t carril);
+/* Guitar Hero a PANTALLA COMPLETA para 1 jugador (retrato 240x320, sin
+ * dividir) -- mismos nombres que los de arriba sin el sufijo "Jugador"/
+ * parametro "jugador" (siempre es el unico jugador en pantalla). Usar en
+ * vez de las funciones de arriba cuando guitar_modo_1p este activo (ver
+ * GuitarHero_ActualizarJugador en main.c). La geometria horizontal
+ * (GH_ZONA_CX, COCKPIT_ZONE_W, NOTE_W) es la misma que en el modo de 2
+ * jugadores -- solo cambia el alto de carril y el radio de zona/nota. */
+void Renderer_DrawModoGuitarHero1P(void);
+void Renderer_GH1P_DrawNota(const Nota_t *nota);
+void Renderer_GH1P_EraseNotaTrail(const Nota_t *nota, uint8_t speed);
+void Renderer_GH1P_ActualizarPuntaje(uint16_t puntaje, uint16_t combo);
+void Renderer_GH1P_DibujarFin(uint16_t puntaje);
+void Renderer_GH1P_FlashZona(uint8_t carril);
+void Renderer_GH1P_ActualizarFlashes(void);
 
 #endif /* __RENDERER_H */

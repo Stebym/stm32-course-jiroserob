@@ -108,7 +108,7 @@ static const uint8_t font5x7[][5] = {
 /* === HELPERS DE FUENTE ==================================================== */
 /* ========================================================================== */
 
-static void draw_char(uint16_t x, uint16_t y, char c,
+static void draw_char(uint16_t x, uint16_t y, char c,   // dibuja UN caracter de la fuente 5x7 en (x,y), escalado
                       uint16_t fg, uint16_t bg, uint8_t scale) {
     if (c < 32 || c > 90) c = '?';                    // fuera del rango cubierto por font5x7 (32-90) -> se dibuja '?' en vez de leer memoria fuera de la tabla
     const uint8_t *g = font5x7[(uint8_t)c - 32];       // puntero a las 5 columnas de bits del glifo de "c" (offset -32 porque la tabla arranca en el espacio, ASCII 32)
@@ -126,7 +126,7 @@ static void draw_char(uint16_t x, uint16_t y, char c,
     }
 }
 
-static void draw_string(uint16_t x, uint16_t y, const char *s,
+static void draw_string(uint16_t x, uint16_t y, const char *s,   // dibuja una cadena completa encadenando draw_char caracter por caracter
                         uint16_t fg, uint16_t bg, uint8_t scale) {
     while (*s) {                        // recorre la cadena hasta el '\0' final
         draw_char(x, y, *s, fg, bg, scale);  // dibuja el caracter actual en la posicion (x,y)
@@ -135,14 +135,14 @@ static void draw_string(uint16_t x, uint16_t y, const char *s,
     }
 }
 
-static uint16_t str_pixel_w(const char *s, uint8_t scale) {
+static uint16_t str_pixel_w(const char *s, uint8_t scale) {   // calcula el ancho en pixeles que ocuparia la cadena a esa escala, sin dibujarla (para poder centrarla antes)
     uint16_t n = 0;                     // cuenta de caracteres de la cadena
     while (*s++) n++;                    // recorre la cadena contando caracteres (sin el '\0')
     return (uint16_t)(n * CHAR_ADV(scale));  // ancho total en pixeles = cantidad de caracteres * ancho de avance por caracter
 }
 
 /* Dibuja la cadena centrada en cx (coordenada X del centro). */
-static void draw_string_c(uint16_t cx, uint16_t y, const char *s,
+static void draw_string_c(uint16_t cx, uint16_t y, const char *s,   // ver comentario de arriba: centra la cadena horizontalmente en cx
                            uint16_t fg, uint16_t bg, uint8_t scale) {
     uint16_t w = str_pixel_w(s, scale);            // ancho total en pixeles que va a ocupar la cadena
     int16_t x  = (int16_t)cx - (int16_t)(w / 2u);  // arranca el texto medio ancho a la izquierda del centro pedido, para que quede centrado
@@ -151,7 +151,7 @@ static void draw_string_c(uint16_t cx, uint16_t y, const char *s,
 }
 
 /* Dibuja un entero sin signo de hasta 5 digitos. */
-static void draw_uint16(uint16_t x, uint16_t y, uint16_t val,
+static void draw_uint16(uint16_t x, uint16_t y, uint16_t val,   // ver comentario de arriba: convierte val a texto decimal y lo dibuja
                         uint16_t fg, uint16_t bg, uint8_t scale) {
     char buf[6];               // hasta 5 digitos (uint16_t max es 65535) + terminador '\0'
     int8_t i = 5;               // indice desde el que se va llenando el buffer, de atras hacia adelante
@@ -171,7 +171,7 @@ static void draw_uint16(uint16_t x, uint16_t y, uint16_t val,
 #define DIV_W       2     // ancho en pixeles de esa franja divisoria
 static const uint16_t PLAYER_X_OFF[2] = { P1_X_OFF, P2_X_OFF };  // offset x de arranque de la mitad de cada jugador (definidos en board_pins.h), indexado [0]=J1 [1]=J2
 
-static inline uint16_t note_y(uint8_t carril) {
+static inline uint16_t note_y(uint8_t carril) {   // y absoluta donde dibujar una nota de ese carril (ver el cuerpo)
     return (uint16_t)(LANE_TOP(carril) + NOTE_Y_PAD);  // y donde dibujar una nota en ese carril = borde superior del carril + relleno vertical fijo (para centrarla dentro del carril)
 }
 
@@ -211,7 +211,7 @@ static const uint8_t seg_table[10] = {
     SEG_A|SEG_B|SEG_C|SEG_D|SEG_F|SEG_G,        /* 9 */
 };
 
-static void draw_seg_digit(int16_t x, int16_t y, uint8_t digit,
+static void draw_seg_digit(int16_t x, int16_t y, uint8_t digit,   // dibuja UN digito estilo 7 segmentos en (x,y)
                             uint16_t fg, uint16_t bg) {
     uint8_t segs = seg_table[digit % 10];  // que segmentos encender para este digito (%10 protege de un digit>9 invalido)
     ILI9341_FillRect((uint16_t)x, (uint16_t)y,
@@ -232,7 +232,7 @@ static void draw_seg_digit(int16_t x, int16_t y, uint8_t digit,
                                         (uint16_t)(y+SEG_S+2*SEG_T), SEG_T, SEG_S, fg);  // segmento derecha-abajo: franja vertical en el borde derecho, mitad de abajo
 }
 
-static void draw_score_bar(uint16_t x_off, uint16_t score, uint16_t fg) {
+static void draw_score_bar(uint16_t x_off, uint16_t score, uint16_t fg) {   // barra de progreso de puntaje (relleno proporcional a score/SCORE_MAX)
     uint16_t bx   = x_off + 23;                 // x donde arranca la barra, relativa al offset de este jugador
     uint16_t bw   = 78, bh = 10, by = 7;          // ancho/alto/y fijos de la barra -- cambiar bw estira/acorta la barra completa
     uint16_t fill = (uint16_t)((uint32_t)score * bw / SCORE_MAX);  // cuantos pixeles de los bw totales representan el puntaje actual (regla de 3 contra SCORE_MAX); el cast a uint32_t evita overflow de la multiplicacion en 16 bits
@@ -240,7 +240,7 @@ static void draw_score_bar(uint16_t x_off, uint16_t score, uint16_t fg) {
     if (fill < bw) ILI9341_FillRect(bx + fill, by, bw - fill, bh, COLOR_DARKGRAY);  // resto de la barra sin llenar, en gris oscuro (fondo)
 }
 
-static void draw_score_digits(uint16_t x_off, uint16_t score,
+static void draw_score_digits(uint16_t x_off, uint16_t score,   // dibuja el puntaje como 4 digitos de 7 segmentos
                                uint16_t fg, uint16_t bg) {
     int16_t dx = (int16_t)(x_off + 103);  // x de arranque del primer digito (millares), relativo al offset del jugador
     uint8_t d[4] = {
@@ -259,7 +259,7 @@ static void draw_score_digits(uint16_t x_off, uint16_t score,
 /* === FONDO ESTATICO (ESTADO_JUGANDO) ====================================== */
 /* ========================================================================== */
 
-void Renderer_DrawBackground(const GameState_t *gs) {
+void Renderer_DrawBackground(const GameState_t *gs) {   // dibuja el fondo completo del modo JUGANDO (recorrido de diseño): franjas de puntaje, carriles y divisor
     (void)gs;  // parametro sin usar -- se recibe por si en el futuro el fondo depende del estado, hoy es siempre el mismo layout fijo
     /* Barras de score */
     ILI9341_FillRect(P1_X_OFF, 0, PLAYER_W, SCORE_BAR_H, COLOR_DARKGRAY);  // franja superior gris para el marcador de J1
@@ -296,7 +296,7 @@ void Renderer_DrawBackground(const GameState_t *gs) {
 /* === SPLASH SCREEN ======================================================== */
 /* ========================================================================== */
 
-void Renderer_DrawSplash(void) {
+void Renderer_DrawSplash(void) {   // dibuja la pantalla de bienvenida (imagen de fondo + credito + instruccion)
     /* Fondo: "NEON RIFF" generada por IA, recortada 1024x768 y reescalada a
      * 320x240 (ver splash_bg.h) — ya trae su propio titulo y panel Simon,
      * asi que no hace falta redibujar iconos/franjas/rejilla encima. */
@@ -316,15 +316,16 @@ void Renderer_DrawSplash(void) {
 }
 
 /* ========================================================================== */
-/* === MENU DE NIVEL (LEGADO, SIN USO EN EL RECORRIDO ACTUAL) ================ */
+/* === MENU DE DIFICULTAD (Guitar Hero) ======================================= */
 /* ========================================================================== */
 /* Pantalla de la primera version del proyecto (seleccion de dificultad por
- * velocidad FACIL/MEDIO/PRO), anterior a introducir la seleccion de cantidad
- * de jugadores y de modo de juego -- el recorrido actual (ver DemoScreen_t
- * en main.c) ya no la incluye. Se deja implementada por si se retoma un
- * ajuste de dificultad mas adelante. */
+ * velocidad FACIL/MEDIO/PRO). Reconectada al recorrido actual (ver
+ * DEMO_MENU_DIFICULTAD en DemoScreen_t, main.c): aparece SOLO para Guitar
+ * Hero, justo despues de confirmar el modo -- fija la velocidad/spawn
+ * inicial de las notas, que despues sigue subiendo sola con el tiempo de
+ * partida (ver GuitarHero_Actualizar en main.c). */
 
-void Renderer_DrawMenu(uint8_t cursor) {
+void Renderer_DrawMenu(uint8_t cursor) {   // dibuja el menu de seleccion de dificultad (3 tarjetas FACIL/MEDIO/PRO), usado antes de Guitar Hero
     ILI9341_FillScreen(COLOR_BLACK);  // borra toda la pantalla a negro antes de dibujar el menu desde cero
 
     /* Cabecera */
@@ -382,10 +383,9 @@ void Renderer_DrawMenu(uint8_t cursor) {
     draw_string_c(LCD_W / 2, dy + 14, card_desc[cursor],
                   COLOR_WHITE, COLOR_DARKGRAY, 1);  // texto de descripcion del nivel actualmente seleccionado, centrado
 
-    /* "INICIO / BTN-R PARA CONFIRMAR" pequeno */
     ILI9341_FillRect(0, 220, LCD_W, 20, COLOR_DARKGRAY);  // franja inferior de ayuda
-    draw_string_c(LCD_W / 2, 226, "BOTON=MUEVE   B1=CONFIRMAR",
-                  COLOR_GREEN, COLOR_DARKGRAY, 1);  // texto de ayuda centrado (pantalla legado, ya no se usa en el recorrido actual)
+    draw_string_c(LCD_W / 2, 226, "JOYSTICK=MUEVE  CUALQUIERA=CONFIRMA",
+                  COLOR_GREEN, COLOR_DARKGRAY, 1);  // texto de ayuda centrado -- igual patron que el resto de los menus del recorrido (joystick mueve, cualquier boton confirma)
 }
 
 /* ========================================================================== */
@@ -394,7 +394,7 @@ void Renderer_DrawMenu(uint8_t cursor) {
 
 /* Dibuja (o borra) UNA tarjeta de "cuantos jugadores", incluida la flechita
  * de seleccion debajo (se borra sola cuando selected=0). */
-static void rsj_draw_card(uint8_t i, uint8_t selected) {
+static void rsj_draw_card(uint8_t i, uint8_t selected) {   // dibuja UNA tarjeta del menu de seleccion de jugadores (1/2), resaltada si esta seleccionada
     static const char *const nombre[2] = { "1 JUGADOR", "2 JUGADORES" };  // texto de cada tarjeta (i=0 -> 1 jugador, i=1 -> 2 jugadores)
     static const uint16_t    color[2]  = { COLOR_P1, COLOR_P2 };          // tarjeta 0 en el color de J1, tarjeta 1 en el color de J2
 
@@ -421,7 +421,7 @@ static void rsj_draw_card(uint8_t i, uint8_t selected) {
     }
 }
 
-void Renderer_DrawSeleccionJugadores(uint8_t cursor) {
+void Renderer_DrawSeleccionJugadores(uint8_t cursor) {   // dibuja el menu completo de "cuantos jugadores" desde cero
     ILI9341_FillScreen(COLOR_BLACK);  // pantalla nueva desde cero
 
     ILI9341_FillRect(0, 0, LCD_W, 26, COLOR_DARKGRAY);  // franja de titulo
@@ -434,7 +434,7 @@ void Renderer_DrawSeleccionJugadores(uint8_t cursor) {
                   COLOR_GREEN, COLOR_DARKGRAY, 1);  // texto de ayuda
 }
 
-void Renderer_UpdateSeleccionJugadores(uint8_t cursor_ant, uint8_t cursor) {
+void Renderer_UpdateSeleccionJugadores(uint8_t cursor_ant, uint8_t cursor) {   // redibuja solo las 2 tarjetas que cambiaron de estado (la que se apaga y la que se prende)
     if (cursor_ant == cursor) return;                          // el cursor no se movio -- no hay nada que redibujar (evita trafico SPI innecesario)
     if (cursor_ant < 2) rsj_draw_card(cursor_ant, 0);            // apaga el resaltado de la tarjeta donde estaba antes el cursor
     if (cursor     < 2) rsj_draw_card(cursor, 1);                 // enciende el resaltado de la tarjeta donde esta ahora
@@ -454,7 +454,7 @@ void Renderer_UpdateSeleccionJugadores(uint8_t cursor_ant, uint8_t cursor) {
 #define RN_BOX_Y    70             // y donde arrancan los 3 casilleros
 #define RN_LETRA_SCALE 6            // escala de la letra grande dentro del casillero (6x el glifo base de 5x7 = 30x42px)
 
-static uint16_t rn_box_x(uint8_t pos) {
+static uint16_t rn_box_x(uint8_t pos) {   // x del casillero de la letra `pos` (0-2) del nombre de 3 letras
     uint16_t total = 3 * RN_BOX_W + 2 * RN_BOX_GAP;               // ancho total ocupado por los 3 casilleros + 2 huecos entre ellos
     uint16_t x0    = (uint16_t)((LCD_W - total) / 2);              // x de arranque para que el conjunto de 3 casilleros quede centrado en pantalla
     return (uint16_t)(x0 + pos * (RN_BOX_W + RN_BOX_GAP));        // x del casillero "pos" (0,1,2), cada uno corrido su ancho+separacion respecto al anterior
@@ -462,7 +462,7 @@ static uint16_t rn_box_x(uint8_t pos) {
 
 /* activo=1 (amarillo) -- letra que se esta editando ahora mismo.
  * activo=0 (gris) -- letra ya confirmada. */
-static void rn_draw_letra(uint8_t pos, char c, uint8_t activo) {
+static void rn_draw_letra(uint8_t pos, char c, uint8_t activo) {   // dibuja UN casillero del nombre con su letra actual, resaltado si es el que se esta editando
     uint16_t bx     = rn_box_x(pos);                    // x de este casillero
     uint16_t borde  = activo ? COLOR_YELLOW : COLOR_GRAY;  // color del marco: amarillo si se esta editando, gris si ya se confirmo
     char     buf[2] = { c, 0 };                          // cadena de 1 caracter (mas terminador) para poder usar draw_string_c
@@ -476,7 +476,7 @@ static void rn_draw_letra(uint8_t pos, char c, uint8_t activo) {
     draw_string_c((uint16_t)(bx + RN_BOX_W / 2), cy, buf, COLOR_WHITE, COLOR_BLACK, RN_LETRA_SCALE);  // dibuja la letra grande, centrada en el casillero
 }
 
-void Renderer_DrawNombre(uint8_t jugador, const char nombre[4], uint8_t pos_actual) {
+void Renderer_DrawNombre(uint8_t jugador, const char nombre[4], uint8_t pos_actual) {   // dibuja la pantalla completa de captura de iniciales de un jugador
     char titulo[24];                                 // buffer para el titulo formateado ("JUGADOR 1 - TU NOMBRE", etc.)
     ILI9341_FillScreen(COLOR_BLACK);                  // pantalla nueva desde cero
 
@@ -491,12 +491,12 @@ void Renderer_DrawNombre(uint8_t jugador, const char nombre[4], uint8_t pos_actu
                   COLOR_GREEN, COLOR_DARKGRAY, 1);  // texto de ayuda
 }
 
-void Renderer_UpdateNombreLetra(uint8_t jugador, uint8_t pos, char letra) {
+void Renderer_UpdateNombreLetra(uint8_t jugador, uint8_t pos, char letra) {   // redibuja solo el casillero que esta editando el jugador ahora mismo (letra girando con el joystick)
     (void)jugador;               // no hace falta: esta pantalla es siempre pantalla completa (no cara-a-cara), no depende de a que jugador pertenece
     rn_draw_letra(pos, letra, 1);  // redibuja SOLO ese casillero, como "activo" (se esta editando) -- evita repintar toda la pantalla por cada letra que se cicla
 }
 
-void Renderer_ConfirmarNombreLetra(uint8_t pos, char letra) {
+void Renderer_ConfirmarNombreLetra(uint8_t pos, char letra) {   // redibuja el casillero ya CONFIRMADO (deja de estar resaltado) al pasar al siguiente
     rn_draw_letra(pos, letra, 0);  // redibuja ese casillero como "confirmado" (marco gris en vez de amarillo), al pasar a la siguiente letra
 }
 
@@ -518,7 +518,7 @@ static const char *const RSM_CARD_DESC[3] = {
 };
 
 /* Dibuja (o borra) UNA tarjeta de modo, incluida la flechita de seleccion */
-static void rsm_draw_card(uint8_t i, uint8_t selected) {
+static void rsm_draw_card(uint8_t i, uint8_t selected) {   // dibuja UNA tarjeta del menu de seleccion de MODO de juego
     uint16_t bx = (uint16_t)(15 + i * 100);  // separa las 3 tarjetas 100px en x
     uint16_t by = 38, bw = 90, bh = 90;       // posicion/tamaño fijo, igual que las tarjetas del menu legado de arriba
     uint16_t inner_bg = selected ? COLOR_DARKGRAY : COLOR_BLACK;  // resalta con fondo gris la tarjeta bajo el cursor
@@ -541,13 +541,13 @@ static void rsm_draw_card(uint8_t i, uint8_t selected) {
     }
 }
 
-static void rsm_draw_desc(uint8_t cursor) {
+static void rsm_draw_desc(uint8_t cursor) {   // dibuja el texto de descripcion del modo actualmente resaltado por el cursor
     uint16_t dy = 175;  // y del panel de descripcion, debajo de las tarjetas
     ILI9341_FillRect(20, dy, 280, 40, COLOR_DARKGRAY);  // fondo del panel de descripcion
     draw_string_c(LCD_W / 2, dy + 14, RSM_CARD_DESC[cursor], COLOR_WHITE, COLOR_DARKGRAY, 1);  // texto de descripcion del modo actualmente seleccionado
 }
 
-void Renderer_DrawSeleccionModo(uint8_t cursor) {
+void Renderer_DrawSeleccionModo(uint8_t cursor) {   // dibuja el menu completo de seleccion de modo (Simon/SimonJoy/Guitar) desde cero
     ILI9341_FillScreen(COLOR_BLACK);  // pantalla nueva desde cero
 
     ILI9341_FillRect(0, 0, LCD_W, 26, COLOR_DARKGRAY);  // franja de titulo
@@ -561,7 +561,7 @@ void Renderer_DrawSeleccionModo(uint8_t cursor) {
                   COLOR_GREEN, COLOR_DARKGRAY, 1);  // recuerda que cualquier boton entra directo a BOTONES y cualquier joystick entra directo a JOYS (seleccion directa, sin pasos intermedios)
 }
 
-void Renderer_UpdateSeleccionModo(uint8_t cursor_ant, uint8_t cursor) {
+void Renderer_UpdateSeleccionModo(uint8_t cursor_ant, uint8_t cursor) {   // redibuja solo el cambio de cursor entre 2 tarjetas del menu de modo
     if (cursor_ant == cursor) return;                    // sin cambio de cursor, nada que redibujar
     if (cursor_ant < 3) rsm_draw_card(cursor_ant, 0);      // apaga el resaltado de la tarjeta anterior
     if (cursor     < 3) rsm_draw_card(cursor, 1);          // enciende el resaltado de la tarjeta nueva
@@ -595,7 +595,7 @@ void Renderer_UpdateSeleccionModo(uint8_t cursor_ant, uint8_t cursor) {
 #define COCK_P1_Y     165  // y donde arranca en el buffer la zona "normal" (jugador 2) -- 165 = COCK_DIV_Y + COCK_DIV_H, justo debajo del divisor
 
 /* Invierte el orden de los 7 bits (filas) de una columna del glifo 5x7. */
-static uint8_t reverse7(uint8_t b) {
+static uint8_t reverse7(uint8_t b) {   // invierte el orden de los 7 bits (filas) de una columna del glifo 5x7, usado para rotar texto 180 grados
     uint8_t r = 0;                                          // acumulador del byte con las filas invertidas
     for (uint8_t i = 0; i < 7; i++) {                        // recorre las 7 filas del glifo
         if (b & (1u << i)) r |= (uint8_t)(1u << (6 - i));    // si la fila "i" esta encendida, prende la fila espejada "6-i" en el resultado
@@ -604,7 +604,7 @@ static uint8_t reverse7(uint8_t b) {
 }
 
 /* Dibuja un caracter rotado 180 grados (para la mitad invertida del cocktail). */
-static void draw_char_180(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg, uint8_t scale) {
+static void draw_char_180(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg, uint8_t scale) {   // dibuja UN caracter rotado 180 grados (para la mitad "cara a cara" invertida del cockpit)
     if (c >= 'a' && c <= 'z') c = (char)(c - 32);             // normaliza minusculas a mayusculas (la tabla font5x7 solo cubre mayusculas)
     if (c < 32 || c > 90) c = '?';                             // fuera de rango cubierto -> se dibuja '?'
     const uint8_t *g = font5x7[(uint8_t)c - 32];                // puntero a las 5 columnas de bits del glifo
@@ -625,7 +625,7 @@ static void draw_char_180(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t 
 }
 
 /* Cadena rotada 180 grados: caracteres en orden inverso, cada uno volteado. */
-static void draw_string_180(uint16_t x, uint16_t y, const char *s, uint16_t fg, uint16_t bg, uint8_t scale) {
+static void draw_string_180(uint16_t x, uint16_t y, const char *s, uint16_t fg, uint16_t bg, uint8_t scale) {   // dibuja una cadena entera rotada 180 grados (orden de caracteres invertido + cada uno volteado)
     uint16_t n = 0;                                    // cuenta de caracteres de la cadena
     for (const char *p = s; *p; p++) n++;                // recorre la cadena contando caracteres
     for (uint16_t i = 0; i < n; i++) {                   // recorre la cadena de nuevo, esta vez para dibujar
@@ -647,7 +647,7 @@ static void draw_string_180(uint16_t x, uint16_t y, const char *s, uint16_t fg, 
  * aparece el nombre/cursor/D-pad de cada jugador, y es independiente de la
  * indexacion de hardware de los botones (0=jugador1 fisico via BTN1_*,
  * 1=jugador2 fisico via BTN2_*), que no se ve afectada por este bloque. */
-static void Cockpit_FillRect(uint8_t jugador, uint16_t lx, uint16_t ly, uint16_t lw, uint16_t lh, uint16_t color) {
+static void Cockpit_FillRect(uint8_t jugador, uint16_t lx, uint16_t ly, uint16_t lw, uint16_t lh, uint16_t color) {   // rectangulo en coordenadas LOCALES de la mitad de `jugador`, transformado (rotado o no) a la mitad fisica de pantalla que corresponda
     if (jugador == 1) {
         ILI9341_FillRect(lx, (uint16_t)(COCK_P1_Y + ly), lw, lh, color);  // jugador 2 (fisico): rectangulo "normal", solo desplazado a la zona de abajo (COCK_P1_Y), sin rotar ni espejar
     } else {
@@ -657,7 +657,7 @@ static void Cockpit_FillRect(uint8_t jugador, uint16_t lx, uint16_t ly, uint16_t
     }
 }
 
-static void Cockpit_DrawString(uint8_t jugador, uint16_t lx, uint16_t ly, const char *s,
+static void Cockpit_DrawString(uint8_t jugador, uint16_t lx, uint16_t ly, const char *s,   // texto en coordenadas LOCALES de la mitad de `jugador`, con la misma transformacion que Cockpit_FillRect
                                 uint16_t fg, uint16_t bg, uint8_t scale) {
     uint16_t sw = str_pixel_w(s, scale);                                  // ancho en pixeles que va a ocupar la cadena, necesario para poder espejar su posicion x
     uint16_t sh = CHAR_H(scale);                                          // alto en pixeles de la cadena, necesario para espejar su posicion y
@@ -677,7 +677,7 @@ static void Cockpit_DrawString(uint8_t jugador, uint16_t lx, uint16_t ly, const 
  * seccion porque tanto el diseño circular de Simon Clasico como el de
  * Simon+Joystick la utilizan. Misma asignacion de ramas jugador==0/1 que
  * Cockpit_FillRect. */
-static void Cockpit_Punto(uint8_t jugador, int16_t lx, int16_t ly, int16_t *px, int16_t *py) {
+static void Cockpit_Punto(uint8_t jugador, int16_t lx, int16_t ly, int16_t *px, int16_t *py) {   // transforma un PUNTO local (sin ancho/alto) a coordenadas absolutas de pantalla, para elementos circulares
     if (jugador == 1) {
         *px = lx;                              // jugador 2 (fisico): x sin cambios
         *py = (int16_t)(COCK_P1_Y + ly);        // y solo desplazada a la zona de abajo
@@ -692,9 +692,9 @@ static void Cockpit_Punto(uint8_t jugador, int16_t lx, int16_t ly, int16_t *px, 
  * desde main.c para la partida de 2 jugadores -- el modo de 1 jugador sigue
  * arrancando siempre en 0 (ver Botones_IniciarSolo), asi que su disposicion
  * en pantalla no cambia. */
-static uint8_t cockpit_simon_invertido = 0;
+static uint8_t cockpit_simon_invertido = 0;  // 0=layout historico, 1=ROJO<->AMARILLO y VERDE<->AZUL intercambiados (ver Renderer_SetSimonClasicoInvertido)
 
-void Renderer_SetSimonClasicoInvertido(uint8_t invertido) {
+void Renderer_SetSimonClasicoInvertido(uint8_t invertido) {   // activa/desactiva el intercambio ROJO<->AMARILLO y VERDE<->AZUL de la cuadricula 2x2 (solo 2 jugadores)
     cockpit_simon_invertido = invertido ? 1 : 0;
 }
 
@@ -704,7 +704,7 @@ void Renderer_SetSimonClasicoInvertido(uint8_t invertido) {
  * Con cockpit_simon_invertido activo, la fila deja de invertirse: da
  * ARRIBA=Rojo+Verde, ABAJO=Amarillo+Azul (Rojo<->Amarillo y Verde<->Azul
  * intercambian de fila respecto al layout historico). */
-static void cockpit_2x2_rect(uint8_t jugador, uint8_t c, uint16_t *lx, uint16_t *ly, uint16_t *lw, uint16_t *lh) {
+static void cockpit_2x2_rect(uint8_t jugador, uint8_t c, uint16_t *lx, uint16_t *ly, uint16_t *lw, uint16_t *lh) {   // bounding box LOCAL (sin rotar) del boton de color `c` en la cuadricula 2x2 de Simon Clasico
     static const uint8_t es_derecha[4] = { 0, 1, 1, 0 };  // por color (0=ROJO 1=VERDE 2=AZUL 3=AMARILLO): que colores van en la columna derecha de la cuadricula 2x2
     static const uint8_t es_abajo[4]   = { 0, 0, 1, 1 };  // que colores van en la fila de abajo (antes de la inversion de mas abajo)
     uint16_t cw = 70, ch = 55, gap = 10;                  // ancho/alto de cada boton y separacion entre ellos -- agrandar cw/ch agranda los botones, gap los separa mas
@@ -727,7 +727,7 @@ static void cockpit_2x2_rect(uint8_t jugador, uint8_t c, uint16_t *lx, uint16_t 
  * esquinas del cuadrado quedan negras (fondo ya limpio por
  * cockpit_clasico_draw_jugador), nunca se pintan, asi que no hace falta
  * borrar nada antes de redibujar. */
-static void cockpit_2x2_draw(uint8_t jugador, uint8_t c, uint8_t activo) {
+static void cockpit_2x2_draw(uint8_t jugador, uint8_t c, uint8_t activo) {   // dibuja UN boton/domo circular de la cuadricula 2x2, encendido o apagado
     uint16_t lx, ly, lw, lh;
     cockpit_2x2_rect(jugador, c, &lx, &ly, &lw, &lh);       // bounding box local (sin rotar/espejar) de este boton
     uint16_t col = activo ? NOTE_COLOR[c] : LANE_COLOR[c];   // color brillante si es el paso activo de la secuencia, apagado si no
@@ -741,39 +741,101 @@ static void cockpit_2x2_draw(uint8_t jugador, uint8_t c, uint8_t activo) {
     int16_t acx, acy;
     Cockpit_Punto(jugador, lcx, lcy, &acx, &acy);            // transforma el centro local a coordenadas absolutas de pantalla (rotando si corresponde)
 
-    ILI9341_FillCircle(acx, acy, r_out, COLOR_DARKGRAY);   /* anillo exterior */
-    ILI9341_FillCircle(acx, acy, r_in,  col);              /* cuerpo del domo */
+    ILI9341_FillCircle2(acx, acy, r_out, COLOR_DARKGRAY, r_in, col);   /* anillo exterior + cuerpo del domo en 1 solo pase de SPI */
 
     if (activo) {
         int16_t r_brillo = r_in / 3;                        // el brillo ocupa un tercio del radio interior
         if (r_brillo < 2) r_brillo = 2;                       // brillo minimo de 2px de radio, para que no desaparezca en botones chicos
         ILI9341_FillCircle((int16_t)(acx - r_in / 3), (int16_t)(acy - r_in / 3),
-                            r_brillo, COLOR_WHITE);          // circulo blanco descentrado arriba-izquierda, simulando un reflejo de luz
+                            r_brillo, COLOR_WHITE);          // circulo blanco descentrado arriba-izquierda, simulando un reflejo de luz -- no es concentrico con el domo, se deja aparte
     }
 }
 
 /* Redibuja TODO un jugador (etiqueta + cuadricula 2x2) sin tocar al otro --
  * usado tanto para el dibujo inicial completo como para reiniciar solo un
  * jugador que perdio, sin borrar la partida en curso del otro. */
-static void cockpit_clasico_draw_jugador(uint8_t jugador, uint8_t paso) {
+static void cockpit_clasico_draw_jugador(uint8_t jugador, uint8_t paso) {   // redibuja toda la mitad de un jugador de Simon Clasico (nombre + los 4 botones)
     Cockpit_FillRect(jugador, 0, 0, COCK_ZONE_W, COCK_ZONE_H, COLOR_BLACK);  // borra toda la mitad de este jugador a negro antes de redibujar
     Cockpit_DrawString(jugador, 8, 5, Nombre_Jugador(jugador),
                         (jugador == 0) ? COLOR_P1 : COLOR_P2, COLOR_BLACK, 2);  // nombre del jugador (iniciales de 3 letras) en su color, esquina superior izquierda LOCAL
     for (uint8_t c = 0; c < 4; c++) cockpit_2x2_draw(jugador, c, paso == c);  // dibuja los 4 botones de color; el que coincide con "paso" se dibuja encendido
 }
 
-void Renderer_DrawModoSimonClasico(uint8_t paso_j1, uint8_t paso_j2) {
+/* === MODO SIMON BOTONES — PANTALLA COMPLETA PARA 1 JUGADOR (retrato 240x320) =
+ * Mismo espiritu que Renderer_DrawModoSimonJoystick1P: dibujo directo, sin
+ * pasar por las transformaciones Cockpit_* (esas son solo para repartir la
+ * pantalla entre 2 mitades encontradas). Reusa el mismo orden de colores
+ * ROJO/VERDE/AZUL/AMARILLO en la cuadricula 2x2 que cockpit_2x2_rect con
+ * invertido=0 (el modo 1P nunca invierte, ver Botones_IniciarSolo en
+ * main.c), pero con domos mucho mas grandes al no tener que compartir la
+ * pantalla con otro jugador. */
+#define S1P_ZONE_W  240   // ancho de pantalla en retrato
+#define S1P_BOT_W   100   // ancho de cada domo
+#define S1P_BOT_H   110   // alto de cada domo
+#define S1P_GAP     20    // separacion entre domos (horizontal y vertical)
+#define S1P_GX0     ((S1P_ZONE_W - (2 * S1P_BOT_W + S1P_GAP)) / 2)  // x de arranque de la cuadricula, centrada
+#define S1P_GY0     40    // y de arranque de la cuadricula, debajo de la franja de titulo
+
+static void simon1p_rect(uint8_t c, uint16_t *x, uint16_t *y, uint16_t *w, uint16_t *h) {   // bounding box del domo de color `c` en el layout de pantalla completa (1 jugador)
+    static const uint8_t es_derecha[4] = { 0, 1, 1, 0 };  // por color (0=ROJO 1=VERDE 2=AZUL 3=AMARILLO): igual orden que cockpit_2x2_rect
+    static const uint8_t es_abajo[4]   = { 0, 0, 1, 1 };  // idem -- con invertido=0 fijo (ver comentario de arriba), abajo = !es_abajo[c]
+    *w = S1P_BOT_W;   // ancho fijo del boton en el layout de pantalla completa
+    *h = S1P_BOT_H;   // alto fijo del boton
+    *x = es_derecha[c] ? (uint16_t)(S1P_GX0 + S1P_BOT_W + S1P_GAP) : (uint16_t)S1P_GX0;  // columna izquierda o derecha segun el color
+    *y = (uint8_t)(!es_abajo[c]) ? (uint16_t)(S1P_GY0 + S1P_BOT_H + S1P_GAP) : (uint16_t)S1P_GY0;  // fila arriba o abajo segun el color
+}
+
+/* Mismo domo circular "estilo boton arcade" que cockpit_2x2_draw, pero
+ * dibujado directo en coordenadas absolutas de pantalla (sin Cockpit_Punto,
+ * no hace falta rotar nada en el modo de 1 jugador). */
+static void simon1p_draw(uint8_t c, uint8_t activo) {   // dibuja UN domo del layout de pantalla completa (1 jugador), encendido o apagado
+    uint16_t x, y, w, h;
+    simon1p_rect(c, &x, &y, &w, &h);
+    uint16_t col = activo ? NOTE_COLOR[c] : LANE_COLOR[c];  // color brillante si esta activo, apagado (LANE_COLOR) si no
+
+    int16_t cx    = (int16_t)(x + w / 2);   // centro x del domo
+    int16_t cy    = (int16_t)(y + h / 2);   // centro y del domo
+    int16_t r_out = (int16_t)((w < h ? w : h) / 2);   // radio exterior = mitad del lado mas chico del rectangulo (para que el circulo entre completo)
+    int16_t r_in  = r_out - 6;   // radio interior, 6px mas chico que el exterior (grosor del anillo)
+    if (r_in < 4) r_in = 4;   // limite minimo para que el nucleo no desaparezca en botones muy chicos
+
+    ILI9341_FillCircle2(cx, cy, r_out, COLOR_DARKGRAY, r_in, col);  /* anillo exterior + cuerpo del domo en 1 solo pase de SPI */
+
+    if (activo) {   // solo dibuja el reflejo de luz si el boton esta encendido
+        int16_t r_brillo = r_in / 3;   // radio del reflejo, un tercio del nucleo
+        if (r_brillo < 2) r_brillo = 2;   // minimo 2px para que no desaparezca
+        ILI9341_FillCircle((int16_t)(cx - r_in / 3), (int16_t)(cy - r_in / 3),
+                            r_brillo, COLOR_WHITE);      /* reflejo de luz -- no concentrico, se deja aparte */
+    }
+}
+
+void Renderer_DrawModoSimonClasico1P(uint8_t paso) {   // dibuja la pantalla completa de Simon Botones para 1 jugador desde cero
+    ILI9341_FillScreen(COLOR_BLACK);  // pantalla nueva desde cero
+
+    ILI9341_FillRect(0, 0, S1P_ZONE_W, 26, COLOR_DARKGRAY);  // franja de titulo
+    draw_string_c(S1P_ZONE_W / 2, 9, "SIMON BOTONES", COLOR_WHITE, COLOR_DARKGRAY, 1);  // titulo centrado (ancho de RETRATO, no LCD_W que es el ancho de paisaje)
+
+    for (uint8_t c = 0; c < 4; c++) simon1p_draw(c, paso == c);  // dibuja los 4 domos; el que coincide con "paso" se dibuja encendido
+}
+
+void Renderer_UpdateModoSimonClasico1PPaso(uint8_t paso_ant, uint8_t paso) {   // redibuja solo los 2 domos que cambiaron (el que se apaga y el que se prende)
+    if (paso_ant == paso) return;                // sin cambio, nada que redibujar
+    if (paso_ant < 4) simon1p_draw(paso_ant, 0);   // apaga el domo anterior
+    if (paso     < 4) simon1p_draw(paso, 1);       // enciende el nuevo
+}
+
+void Renderer_DrawModoSimonClasico(uint8_t paso_j1, uint8_t paso_j2) {   // dibuja las 2 mitades completas de Simon Clasico (2 jugadores) desde cero
     ILI9341_FillScreen(COLOR_BLACK);                                        // pantalla nueva desde cero
     ILI9341_FillRect(0, COCK_DIV_Y, COCK_ZONE_W, COCK_DIV_H, COLOR_DARKGRAY); // franja divisoria entre las 2 mitades de mesa
     cockpit_clasico_draw_jugador(0, paso_j1);                                // dibuja la mitad de jugador logico 0 (fisico BTN1_*) con su paso activo
     cockpit_clasico_draw_jugador(1, paso_j2);                                // dibuja la mitad de jugador logico 1 (fisico BTN2_*) con su paso activo
 }
 
-void Renderer_DrawModoSimonClasicoJugador(uint8_t jugador, uint8_t paso) {
+void Renderer_DrawModoSimonClasicoJugador(uint8_t jugador, uint8_t paso) {   // redibuja SOLO la mitad de un jugador (2 jugadores), sin tocar al otro
     cockpit_clasico_draw_jugador(jugador, paso);  // redibuja solo la mitad de UN jugador (usado al reiniciar solo a quien perdio, sin tocar al otro)
 }
 
-void Renderer_UpdateModoSimonClasicoPaso(uint8_t jugador, uint8_t paso_ant, uint8_t paso) {
+void Renderer_UpdateModoSimonClasicoPaso(uint8_t jugador, uint8_t paso_ant, uint8_t paso) {   // redibuja solo el boton que cambio de estado en la mitad de ese jugador
     if (paso_ant == paso) return;                          // el paso activo no cambio -- nada que redibujar
     if (paso_ant < 4) cockpit_2x2_draw(jugador, paso_ant, 0);  // apaga (color oscuro) el boton que estaba activo antes
     if (paso     < 4) cockpit_2x2_draw(jugador, paso, 1);       // enciende (color brillante) el boton nuevo
@@ -798,15 +860,18 @@ static uint16_t cockpit_clasico_racha_dibujada[2] = { 0xFFFF, 0xFFFF };  // ulti
  * resultado visible era literalmente el sintoma que se queria evitar
  * ("Racha:" saliendo como "R----:" en pantalla). Por eso esta version deja
  * pasar 'a'-'z' sin tocar, ademas de 32-90. */
-static void Texto_Sanear(char *s) {
-    for (; *s; s++) {
-        char c = *s;
-        if (c >= 'a' && c <= 'z') continue;   // minuscula legitima, no tocar (ver comentario arriba)
-        if (c < 32 || c > 90) *s = '-';
+static void Texto_Sanear(char *s) {   // reemplaza bytes fuera del rango imprimible de la fuente por '-', para no mostrar simbolos corruptos en pantalla
+    for (; *s; s++) {   // recorre la cadena caracter por caracter hasta el '\0'
+        char c = *s;   // caracter actual
+        if (c >= 'a' && c <= 'z') {   // es una minuscula legitima (no corrupcion)
+            *s = (char)(c - 32);  // Convierte minusculas a MAYUSCULAS
+            continue;   // ya se normalizo, pasa al siguiente caracter sin validar mas
+        }
+        if (c < 32 || c > 90) *s = '-';   // fuera del rango imprimible de la fuente (ni espacio-Z ni minuscula ya convertida) -- se reemplaza por '-'
     }
 }
 
-void Renderer_ActualizarRachaBotones(uint8_t jugador, uint16_t racha) {
+void Renderer_ActualizarRachaBotones(uint8_t jugador, uint16_t racha) {   // redibuja solo el numero de ronda de ese jugador (2 jugadores)
     if (racha == cockpit_clasico_racha_dibujada[jugador]) return;  // ya esta dibujada esta racha, no repetir el trabajo
     char buf[10];
     snprintf(buf, sizeof(buf), "R:%u", (unsigned)racha);            // formatea "R:<numero>"
@@ -816,7 +881,7 @@ void Renderer_ActualizarRachaBotones(uint8_t jugador, uint16_t racha) {
     cockpit_clasico_racha_dibujada[jugador] = racha;                  // recuerda que ya se dibujo esta racha, para no repetir en el proximo tick
 }
 
-void Renderer_DibujarGameOverBotones(uint8_t jugador, uint16_t racha, uint16_t mejor) {
+void Renderer_DibujarGameOverBotones(uint8_t jugador, uint16_t racha, uint16_t mejor) {   // dibuja la pantalla de GAME OVER en la mitad de ese jugador (2 jugadores)
     char linea[20];
     Cockpit_FillRect(jugador, 0, 0, COCK_ZONE_W, COCK_ZONE_H, COLOR_BLACK);  // borra toda la mitad de este jugador
     Cockpit_DrawString(jugador, 50, 35, "GAME OVER", COLOR_RED, COLOR_BLACK, 2);  // titulo grande en rojo
@@ -850,7 +915,7 @@ static const uint8_t SJ_DPAD_COLOR_IDX[4] = { 3, 2, 0, 1 };
  * en la mesa, el sentido percibido de izquierda/derecha resulta invertido
  * respecto al orden usado en el D-pad de 1 jugador. Se usa la misma tabla
  * para los dos jugadores del modo cara a cara. */
-static const uint8_t SJ_DPAD_COLOR_IDX_P0[4] = { 3, 2, 1, 0 };
+static const uint8_t SJ_DPAD_COLOR_IDX_P0[4] = { 2, 3, 0, 1 }; // Inverte los pares de colores en la pantalla
 
 /* ========================================================================== */
 /* === SIMON+JOYSTICK — 2 JUGADORES CARA A CARA (portrait, cockpit) ========== */
@@ -862,10 +927,10 @@ static const uint8_t SJ_DPAD_COLOR_IDX_P0[4] = { 3, 2, 1, 0 };
 /* Cuadro local (240x155) de cada boton del D-pad -- cruz centrada, mas
  * angosta que la version de 1 jugador en pantalla completa porque aca
  * comparte la mitad de una pantalla en retrato. */
-static void cockpit_pad_rect(uint8_t d, uint16_t *lx, uint16_t *ly, uint16_t *lw, uint16_t *lh) {
-    static const int16_t  cx4[4] = { 120, 120,  45, 195 };  // centro x local por direccion (d=0 ARRIBA .. 3 DER): ARRIBA/ABAJO centrados en x=120, IZQ a la izquierda, DER a la derecha
-    static const int16_t  cy4[4] = {  58, 128,  93,  93 };  // centro y local: ARRIBA arriba (y chico), ABAJO abajo (y grande), IZQ/DER a media altura
-    static const uint16_t r4[4]  = {  22,  22,  24,  24 };  // radio de cada badge -- IZQ/DER un poco mas grandes (24 vs 22) para balancear visualmente la cruz
+static void cockpit_pad_rect(uint8_t d, uint16_t *lx, uint16_t *ly, uint16_t *lw, uint16_t *lh) {   // bounding box LOCAL de la flecha de direccion `d` del D-pad de Simon+Joystick
+    static const int16_t  cx4[4] = { 120, 120,  32, 208 };  // centro x local por direccion (d=0 ARRIBA .. 3 DER): ARRIBA/ABAJO centrados en x=120, IZQ a la izquierda, DER a la derecha
+    static const int16_t  cy4[4] = {  48, 128,  91,  91 };  // centro y local: ARRIBA arriba (y chico), ABAJO abajo (y grande), IZQ/DER a media altura
+    static const uint16_t r4[4]  = {  25,  22,  27,  27 };  // radio de cada badge -- IZQ/DER un poco mas grandes (24 vs 22) para balancear visualmente la cruz
     uint16_t r = r4[d];
     *lw = (uint16_t)(2 * r);          // ancho del bounding box = diametro
     *lh = (uint16_t)(2 * r);          // alto del bounding box = diametro
@@ -877,7 +942,7 @@ static void cockpit_pad_rect(uint8_t d, uint16_t *lx, uint16_t *ly, uint16_t *lw
  * sj1p_dibujar_flecha (FillRect apiladas) pero cada rectangulo pasa por
  * Cockpit_FillRect -- asi "arriba" en local siempre sale como "arriba" para
  * ESE jugador ya rotado, sin duplicar la logica de la flecha en si. */
-static void cockpit_dibujar_flecha(uint8_t jugador, uint16_t lbx, uint16_t lby, uint16_t lbw, uint16_t lbh,
+static void cockpit_dibujar_flecha(uint8_t jugador, uint16_t lbx, uint16_t lby, uint16_t lbw, uint16_t lbh,   // dibuja UNA flecha triangular del D-pad, orientada segun su direccion
                                     uint8_t dir, uint16_t color) {
     int16_t cx   = (int16_t)(lbx + lbw / 2);              // centro x local de la caja del D-pad
     int16_t cy   = (int16_t)(lby + lbh / 2);              // centro y local de la caja
@@ -924,7 +989,7 @@ static void cockpit_dibujar_flecha(uint8_t jugador, uint16_t lbx, uint16_t lby, 
     }
 }
 
-static void cockpit_pad_draw(uint8_t jugador, uint8_t d, uint8_t activo) {
+static void cockpit_pad_draw(uint8_t jugador, uint8_t d, uint8_t activo) {   // dibuja UNA flecha del D-pad de Simon+Joystick (2 jugadores), encendida o apagada
     uint16_t lx, ly, lw, lh;
     cockpit_pad_rect(d, &lx, &ly, &lw, &lh);                // bounding box local de este badge de direccion
 
@@ -954,25 +1019,25 @@ static void cockpit_pad_draw(uint8_t jugador, uint8_t d, uint8_t activo) {
 /* Redibuja TODO un jugador (etiqueta + 4 badges) sin tocar al otro --
  * usado tanto para el dibujo inicial completo como para reiniciar solo un
  * jugador que perdio, sin borrar la partida en curso del otro. */
-static void cockpit_draw_jugador(uint8_t jugador, uint8_t paso) {
+static void cockpit_draw_jugador(uint8_t jugador, uint8_t paso) {   // redibuja toda la mitad de un jugador de Simon+Joystick (nombre + D-pad completo)
     Cockpit_FillRect(jugador, 0, 0, COCK_ZONE_W, COCK_ZONE_H, COLOR_BLACK);  // borra toda la mitad de este jugador
     Cockpit_DrawString(jugador, 8, 4, Nombre_Jugador(jugador),
                         (jugador == 0) ? COLOR_P1 : COLOR_P2, COLOR_BLACK, 1);  // nombre del jugador en su color
     for (uint8_t d = 0; d < 4; d++) cockpit_pad_draw(jugador, d, paso == d);  // dibuja las 4 direcciones; la que coincide con "paso" se dibuja encendida
 }
 
-void Renderer_DrawModoSimonJoystick2P(uint8_t paso_j1, uint8_t paso_j2) {
+void Renderer_DrawModoSimonJoystick2P(uint8_t paso_j1, uint8_t paso_j2) {   // dibuja las 2 mitades completas de Simon+Joystick (2 jugadores) desde cero
     ILI9341_FillScreen(COLOR_BLACK);                                          // pantalla nueva desde cero
     ILI9341_FillRect(0, COCK_DIV_Y, COCK_ZONE_W, COCK_DIV_H, COLOR_DARKGRAY);  // franja divisoria entre las 2 mitades
     cockpit_draw_jugador(0, paso_j1);                                          // dibuja jugador logico 0
     cockpit_draw_jugador(1, paso_j2);                                          // dibuja jugador logico 1
 }
 
-void Renderer_DrawModoSimonJoystick2PJugador(uint8_t jugador, uint8_t paso) {
+void Renderer_DrawModoSimonJoystick2PJugador(uint8_t jugador, uint8_t paso) {   // redibuja SOLO la mitad de un jugador (2 jugadores), sin tocar al otro
     cockpit_draw_jugador(jugador, paso);  // redibuja solo la mitad de UN jugador
 }
 
-void Renderer_UpdateModoSimonJoystick2PPaso(uint8_t jugador, uint8_t paso_ant, uint8_t paso) {
+void Renderer_UpdateModoSimonJoystick2PPaso(uint8_t jugador, uint8_t paso_ant, uint8_t paso) {   // redibuja solo la flecha del D-pad que cambio de estado
     if (paso_ant == paso) return;                             // sin cambio de paso activo, nada que redibujar
     if (paso_ant < 4) cockpit_pad_draw(jugador, paso_ant, 0);   // apaga la direccion que estaba activa
     if (paso     < 4) cockpit_pad_draw(jugador, paso, 1);       // enciende la direccion nueva
@@ -980,7 +1045,7 @@ void Renderer_UpdateModoSimonJoystick2PPaso(uint8_t jugador, uint8_t paso_ant, u
 
 static uint16_t cockpit_racha_dibujada[2] = { 0xFFFF, 0xFFFF };  // ultima racha dibujada por jugador, 0xFFFF = ninguna todavia
 
-void Renderer_ActualizarRachaJoystick2P(uint8_t jugador, uint16_t racha) {
+void Renderer_ActualizarRachaJoystick2P(uint8_t jugador, uint16_t racha) {   // redibuja solo el numero de ronda de ese jugador (2 jugadores)
     if (racha == cockpit_racha_dibujada[jugador]) return;  // ya dibujada, no repetir
     char buf[10];
     snprintf(buf, sizeof(buf), "R:%u", (unsigned)racha);    // formatea "R:<numero>"
@@ -990,7 +1055,7 @@ void Renderer_ActualizarRachaJoystick2P(uint8_t jugador, uint16_t racha) {
     cockpit_racha_dibujada[jugador] = racha;                 // recuerda la ultima racha dibujada
 }
 
-void Renderer_DibujarGameOverJoystick2P(uint8_t jugador, uint16_t racha, uint16_t mejor) {
+void Renderer_DibujarGameOverJoystick2P(uint8_t jugador, uint16_t racha, uint16_t mejor) {   // dibuja la pantalla de GAME OVER en la mitad de ese jugador (2 jugadores)
     char linea[20];
     Cockpit_FillRect(jugador, 0, 0, COCK_ZONE_W, COCK_ZONE_H, COLOR_BLACK);  // borra toda la mitad de este jugador
     Cockpit_DrawString(jugador, 50, 35, "GAME OVER", COLOR_RED, COLOR_BLACK, 2);  // titulo grande en rojo
@@ -1022,10 +1087,11 @@ void Renderer_DibujarGameOverJoystick2P(uint8_t jugador, uint16_t racha, uint16_
 #define GH_LANE_H      32  // alto de cada uno de los 4 carriles -- agrandarlo separa mas las notas verticalmente
 #define GH_SEP_H       2   // separacion entre carriles consecutivos
 #define GH_LANE_TOP(n) ((uint16_t)(GH_LANE_Y0 + (n) * (GH_LANE_H + GH_SEP_H)))  // y de arranque del carril "n": apila carriles de alto+separacion desde GH_LANE_Y0
-#define GH_ZONA_R      13     /* radio visual de la zona de golpe circular   */
-#define GH_NOTE_R      12     /* radio de las fichas circulares de nota      */
+/* GH_ZONA_R y GH_NOTE_R (radio de la zona de golpe y de las notas) ya estan
+ * definidos en renderer.h -- expuestos ahi para que main.c pueda calcular
+ * GH_HIT_OK_2P sin duplicar estos numeros en 2 archivos. */
 
-static inline uint16_t gh_note_cy(uint8_t carril) {
+static inline uint16_t gh_note_cy(uint8_t carril) {   // y (centro) de un carril de Guitar Hero 2 jugadores
     return (uint16_t)(GH_LANE_TOP(carril) + GH_LANE_H / 2);  // centro y del carril = borde superior + mitad del alto
 }
 
@@ -1042,14 +1108,13 @@ static uint8_t gh_flash_pendiente[2][4];
  * "presionado" (PRESS_COLOR). Factorizada aparte porque se repinta desde 2
  * lugares (dibujo inicial del carril y el borrado delta de notas cuando la
  * franja borrada invade la zona). */
-static void gh_draw_zona(uint8_t jugador, uint8_t c, uint16_t ly) {
+static void gh_draw_zona(uint8_t jugador, uint8_t c, uint16_t ly) {   // dibuja la zona de golpe circular (anillo + centro) de un carril
     int16_t acx, acy;
     Cockpit_Punto(jugador, GH_ZONA_CX, (int16_t)(ly + GH_LANE_H / 2), &acx, &acy);  // centro de la zona de golpe transformado al jugador correspondiente
-    ILI9341_FillCircle(acx, acy, GH_ZONA_R, NOTE_COLOR[c]);        // anillo exterior del color brillante del carril
-    ILI9341_FillCircle(acx, acy, GH_ZONA_R - 4, PRESS_COLOR[c]);   // centro con el tono "presionado", 4px mas chico que el anillo
+    ILI9341_FillCircle2(acx, acy, GH_ZONA_R, NOTE_COLOR[c], GH_ZONA_R - 4, PRESS_COLOR[c]);   // anillo + centro "presionado" en 1 solo pase de SPI
 }
 
-static void gh_draw_carril(uint8_t jugador, uint8_t c) {
+static void gh_draw_carril(uint8_t jugador, uint8_t c) {   // dibuja UN carril completo (fondo + bordes + zona de golpe)
     uint16_t ly = GH_LANE_TOP(c);                                              // y de arranque de este carril
     Cockpit_FillRect(jugador, 0, ly, COCK_ZONE_W, GH_LANE_H, COLOR_BLACK);       // fondo negro de todo el carril
     Cockpit_FillRect(jugador, 0, ly, COCK_ZONE_W, 1, NOTE_COLOR[c]);              // linea fina de color en el borde superior del carril
@@ -1057,7 +1122,7 @@ static void gh_draw_carril(uint8_t jugador, uint8_t c) {
     gh_draw_zona(jugador, c, ly);                                                // zona de golpe circular de este carril
 }
 
-static void gh_draw_jugador(uint8_t jugador) {
+static void gh_draw_jugador(uint8_t jugador) {   // redibuja toda la mitad de un jugador de Guitar Hero (nombre + los 4 carriles)
     Cockpit_FillRect(jugador, 0, 0, COCK_ZONE_W, COCK_ZONE_H, COLOR_BLACK);  // borra toda la mitad de este jugador
     Cockpit_DrawString(jugador, 8, 4, Nombre_Jugador(jugador),
                         (jugador == 0) ? COLOR_P1 : COLOR_P2, COLOR_BLACK, 1);  // nombre del jugador
@@ -1072,21 +1137,21 @@ static void gh_draw_jugador(uint8_t jugador) {
     for (uint8_t c = 0; c < 4; c++) gh_flash_pendiente[jugador][c] = 0;  // limpia banderas de flash de una ronda anterior, para no arrastrar un flash residual a la pantalla nueva
 }
 
-void Renderer_DrawModoGuitarHero2P(void) {
+void Renderer_DrawModoGuitarHero2P(void) {   // dibuja las 2 mitades completas de Guitar Hero (2 jugadores) desde cero
     ILI9341_FillScreen(COLOR_BLACK);                                          // pantalla nueva desde cero
     ILI9341_FillRect(0, COCK_DIV_Y, COCK_ZONE_W, COCK_DIV_H, COLOR_DARKGRAY);  // franja divisoria entre las 2 mitades
     gh_draw_jugador(0);  // dibuja jugador logico 0
     gh_draw_jugador(1);  // dibuja jugador logico 1
 }
 
-void Renderer_DrawModoGuitarHeroJugador(uint8_t jugador) {
+void Renderer_DrawModoGuitarHeroJugador(uint8_t jugador) {   // redibuja SOLO la mitad de un jugador (usado tanto para el dibujo inicial 1P como para reiniciar una ronda)
     gh_draw_jugador(jugador);  // redibuja solo la mitad de UN jugador
 }
 
 static uint16_t gh_puntaje_dibujado[2] = { 0xFFFF, 0xFFFF };  // ultimo puntaje ya dibujado por jugador (0xFFFF = ninguno todavia)
 static uint16_t gh_combo_dibujado[2]   = { 0xFFFF, 0xFFFF };  // ultimo combo ya dibujado por jugador
 
-void Renderer_GH_ActualizarPuntaje(uint8_t jugador, uint16_t puntaje, uint16_t combo) {
+void Renderer_GH_ActualizarPuntaje(uint8_t jugador, uint16_t puntaje, uint16_t combo) {   // redibuja solo el texto de puntaje/combo de ese jugador, si cambio
     if (puntaje == gh_puntaje_dibujado[jugador] && combo == gh_combo_dibujado[jugador]) return;  // ninguno de los 2 valores cambio, no hay nada que redibujar
     char buf[16];
     snprintf(buf, sizeof(buf), "P:%u C:%u", (unsigned)puntaje, (unsigned)combo);  // formatea "P:<puntaje> C:<combo>"
@@ -1104,15 +1169,14 @@ void Renderer_GH_ActualizarPuntaje(uint8_t jugador, uint16_t puntaje, uint16_t c
  * (antes de pasar por Cockpit_Punto), porque un circulo es rotacionalmente
  * simetrico: solo su CENTRO necesita pasar por la transformacion de
  * espejo, no su forma. */
-void Renderer_GH_DrawNota(uint8_t jugador, const Nota_t *nota) {
+void Renderer_GH_DrawNota(uint8_t jugador, const Nota_t *nota) {   // dibuja UNA nota circular en su posicion actual
     if (!nota->activa) return;                                   // nota inactiva (ya golpeada o sin spawnear) -- no dibujar nada
     int16_t ccx = (int16_t)(nota->x_rel + NOTE_W / 2);            // centro x local de la nota (su x_rel es la esquina, se le suma medio ancho)
     if (ccx + (int16_t)GH_NOTE_R <= 0 || ccx - (int16_t)GH_NOTE_R >= (int16_t)COCK_ZONE_W) return;  // la nota esta completamente fuera de la zona visible -- no dibujar (evita trabajo de SPI de sobra)
 
     int16_t acx, acy;
     Cockpit_Punto(jugador, ccx, (int16_t)gh_note_cy(nota->carril), &acx, &acy);  // centro transformado a coordenadas absolutas de pantalla
-    ILI9341_FillCircle(acx, acy, GH_NOTE_R, NOTE_COLOR[nota->carril]);  // cuerpo de la ficha, del color de su carril
-    ILI9341_FillCircle(acx, acy, GH_NOTE_R / 3, COLOR_WHITE);            // nucleo blanco centrado, da efecto de relieve/brillo
+    ILI9341_FillCircle2(acx, acy, GH_NOTE_R, NOTE_COLOR[nota->carril], GH_NOTE_R / 3, COLOR_WHITE);  // cuerpo + nucleo blanco en 1 solo pase de SPI (menos trabajo por nota, importa con varias notas en pantalla a 2 jugadores)
 }
 
 /* Borrado DELTA por caja delimitadora (bounding box), no por arco circular
@@ -1128,7 +1192,7 @@ void Renderer_GH_DrawNota(uint8_t jugador, const Nota_t *nota) {
  * basada solo en el diametro (2*GH_NOTE_R) dejaria sin borrar la columna o
  * fila mas externa del circulo en cada movimiento, generando un rastro fino
  * a lo largo de todo el recorrido de la nota. */
-void Renderer_GH_EraseNotaTrail(uint8_t jugador, const Nota_t *nota, uint8_t speed) {
+void Renderer_GH_EraseNotaTrail(uint8_t jugador, const Nota_t *nota, uint8_t speed) {   // borra solo la franja de pantalla que la nota dejo atras al moverse (no toda la pantalla)
     if (!nota->activa) return;  // nota inactiva -- no habia nada dibujado, nada que borrar
 
     /* la nota viaja hacia IZQUIERDA (x decreciente) -- la franja que queda
@@ -1171,14 +1235,14 @@ void Renderer_GH_EraseNotaTrail(uint8_t jugador, const Nota_t *nota, uint8_t spe
  * "blanco/diana" en la iteracion siguiente -- eso da exactamente 1 frame
  * de blanco, sin necesitar un timer aparte. */
 
-void Renderer_GH_FlashZona(uint8_t jugador, uint8_t carril) {
+void Renderer_GH_FlashZona(uint8_t jugador, uint8_t carril) {   // pinta la zona de golpe de blanco brillante por 1 frame (efecto de impacto al acertar)
     int16_t acx, acy;
     Cockpit_Punto(jugador, GH_ZONA_CX, (int16_t)(GH_LANE_TOP(carril) + GH_LANE_H / 2), &acx, &acy);  // centro de la zona de este carril, transformado a pantalla
     ILI9341_FillCircle(acx, acy, GH_ZONA_R, COLOR_WHITE);  // pinta la zona entera de blanco brillante (efecto de flash)
     gh_flash_pendiente[jugador][carril] = 1;                // marca que hay que revertir este flash en el proximo tick
 }
 
-void Renderer_GH_ActualizarFlashes(uint8_t jugador) {
+void Renderer_GH_ActualizarFlashes(uint8_t jugador) {   // revierte a estilo normal cualquier zona que quedo en blanco del frame anterior
     for (uint8_t c = 0; c < 4; c++) {                        // recorre los 4 carriles de este jugador
         if (!gh_flash_pendiente[jugador][c]) continue;        // este carril no tiene flash pendiente, seguir con el siguiente
         gh_draw_zona(jugador, c, GH_LANE_TOP(c));               // repinta la zona con su estilo normal (anillo+centro), tapando el blanco
@@ -1186,45 +1250,17 @@ void Renderer_GH_ActualizarFlashes(uint8_t jugador) {
     }
 }
 
-/* Nota sostenida: mismo cuerpo que Renderer_GH_DrawNota (circulo del color
- * de carril), pero el nucleo blanco central crece con progreso_pct (0-100)
- * en vez de quedar fijo en GH_NOTE_R/3 -- da la sensacion de "ir llenando"
- * la ficha mientras se mantiene presionado el boton. Se redibuja el cuerpo
- * completo en cada llamada (no solo el nucleo) porque el nucleo previo era
- * mas chico y dejaria un anillo del color de carril sin tapar si solo se
- * pintara el nucleo nuevo encima. La nota esta FIJA en la zona de golpe
- * mientras dura el sostenido (ver gh_sosteniendo en main.c), asi que a
- * diferencia de Renderer_GH_DrawNota no hace falta logica de "estela" -- se
- * pinta siempre en el mismo lugar. */
-void Renderer_GH_DrawNotaSostenida(uint8_t jugador, const Nota_t *nota, uint8_t progreso_pct) {
-    if (!nota->activa) return;
-    if (progreso_pct > 100) progreso_pct = 100;   // clamp defensivo
-    int16_t ccx = (int16_t)(nota->x_rel + NOTE_W / 2);
-    int16_t acx, acy;
-    Cockpit_Punto(jugador, ccx, (int16_t)gh_note_cy(nota->carril), &acx, &acy);
-    ILI9341_FillCircle(acx, acy, GH_NOTE_R, NOTE_COLOR[nota->carril]);            // cuerpo del color de carril, igual que una nota normal
-    uint8_t core_r = (uint8_t)(1u + ((uint16_t)(GH_NOTE_R - 1) * progreso_pct) / 100u);  // nucleo blanco: crece de 1px a GH_NOTE_R segun el progreso
-    ILI9341_FillCircle(acx, acy, core_r, COLOR_WHITE);
-}
-
-/* Restaura el estilo normal (anillo + centro "presionado") de la zona de
- * golpe de `carril`, tapando lo que haya quedado dibujado por la nota
- * sostenida que acaba de terminar (completa o cortada). Sin esto quedaria
- * un circulo residual de la ultima Renderer_GH_DrawNotaSostenida pegado en
- * la zona de golpe para siempre (esa nota ya no se vuelve a dibujar, asi
- * que nada mas la borraria). */
-void Renderer_GH_TerminarSostenida(uint8_t jugador, uint8_t carril) {
-    gh_draw_zona(jugador, carril, GH_LANE_TOP(carril));
-}
-
-void Renderer_GH_DibujarFin(uint8_t jugador, uint16_t puntaje) {
+void Renderer_GH_DibujarFin(uint8_t jugador, uint16_t puntaje) {   // dibuja "RONDA COMPLETA" con el puntaje final en la mitad de ese jugador
     char linea[24];
     Cockpit_FillRect(jugador, 0, 0, COCK_ZONE_W, COCK_ZONE_H, COLOR_BLACK);  // borra toda la mitad de este jugador
     Cockpit_DrawString(jugador, 30, 40, "RONDA COMPLETA", COLOR_GREEN, COLOR_BLACK, 1);  // titulo de fin de ronda
     snprintf(linea, sizeof(linea), "Puntaje: %u", (unsigned)puntaje);  // formatea el puntaje final
     Texto_Sanear(linea);
     Cockpit_DrawString(jugador, 60, 70, linea, COLOR_YELLOW, COLOR_BLACK, 1);
-    Cockpit_DrawString(jugador, 20, 100, "boton=jugar de nuevo", COLOR_GRAY, COLOR_BLACK, 1);  // instruccion de reintento
+    Cockpit_DrawString(jugador, 20, 93,  "V/A/AM=repetir",       COLOR_GRAY, COLOR_BLACK, 1);  // instruccion de reintento
+    Cockpit_DrawString(jugador, 20, 106, "ROJO 2s=menu",         COLOR_GRAY, COLOR_BLACK, 1);  // atajo de salida (ver SalirGameOver1P/2P_Detectado en main.c)
+    Cockpit_DrawString(jugador, 20, 119, "VERDE 2s=cancion",     COLOR_GRAY, COLOR_BLACK, 1);  // atajo de cambio de cancion (ver GH_BotonSostenidoDetectado en main.c)
+    Cockpit_DrawString(jugador, 20, 132, "AZUL 2s=dificultad",   COLOR_GRAY, COLOR_BLACK, 1);  // atajo de cambio de dificultad
     gh_puntaje_dibujado[jugador] = 0xFFFF;  // fuerza que el proximo Renderer_GH_ActualizarPuntaje redibuje (aunque el valor "coincida" con el de la ronda anterior)
     gh_combo_dibujado[jugador]   = 0xFFFF;
 
@@ -1236,6 +1272,138 @@ void Renderer_GH_DibujarFin(uint8_t jugador, uint16_t puntaje) {
 }
 
 /* ========================================================================== */
+/* === GUITAR HERO — PANTALLA COMPLETA PARA 1 SOLO JUGADOR (retrato 240x320) =
+ * Mismo mecanismo de carriles/notas/zona de golpe que las funciones
+ * Renderer_GH_* de arriba, pero dibujado DIRECTO en coordenadas absolutas de
+ * pantalla (sin Cockpit_*, el modo de 1 jugador nunca rota) y con carriles
+ * mucho mas altos al no compartir la pantalla con otro jugador. La geometria
+ * HORIZONTAL (GH_ZONA_CX, COCKPIT_ZONE_W, NOTE_W, en renderer.h) es la MISMA
+ * que en el modo de 2 jugadores -- main.c la usa igual para ambos modos en
+ * GuitarHero_ActualizarJugador, asi que el spawn/movimiento/deteccion de
+ * golpe de las notas no necesita saber si esta jugando 1 o 2 jugadores.
+ * Unicamente cambia la geometria VERTICAL (alto de carril) y el radio de
+ * zona/nota, mas grandes aca al sobrar espacio de pantalla. */
+#define GH1P_LANE_Y0     46   // debajo de la franja de titulo (26px) + fila de puntaje (20px)
+#define GH1P_LANE_H      60   // alto de cada carril -- mucho mas alto que GH_LANE_H (32) del modo de 2 jugadores
+#define GH1P_SEP_H       6    // separacion entre carriles consecutivos
+#define GH1P_LANE_TOP(n) ((uint16_t)(GH1P_LANE_Y0 + (n) * (GH1P_LANE_H + GH1P_SEP_H)))  // y de arranque del carril "n"
+/* GH1P_ZONA_R y GH1P_NOTE_R ya estan definidos en renderer.h -- expuestos
+ * ahi para que main.c calcule GH_HIT_OK_1P sin duplicar estos numeros. */
+
+static inline uint16_t gh1p_note_cy(uint8_t carril) {   // y (centro) de un carril de Guitar Hero a pantalla completa (1 jugador)
+    return (uint16_t)(GH1P_LANE_TOP(carril) + GH1P_LANE_H / 2);  // centro y del carril
+}
+
+/* Misma bandera de flash pendiente que gh_flash_pendiente[2][4], pero para
+ * un solo jugador (sin dimension de jugador). */
+static uint8_t gh1p_flash_pendiente[4];
+
+static void gh1p_draw_zona(uint8_t c, uint16_t ly) {   // zona de golpe circular de un carril, layout de pantalla completa
+    int16_t acx = (int16_t)GH_ZONA_CX;                 // x absoluta = local (el modo de 1 jugador nunca rota ni desplaza en x)
+    int16_t acy = (int16_t)(ly + GH1P_LANE_H / 2);      // y absoluta = local (idem)
+    ILI9341_FillCircle2(acx, acy, GH1P_ZONA_R, NOTE_COLOR[c], GH1P_ZONA_R - 6, PRESS_COLOR[c]);   // anillo + centro "presionado" en 1 solo pase de SPI
+}
+
+static void gh1p_draw_carril(uint8_t c) {   // dibuja UN carril completo del layout de pantalla completa
+    uint16_t ly = GH1P_LANE_TOP(c);
+    ILI9341_FillRect(0, ly, COCKPIT_ZONE_W, GH1P_LANE_H, COLOR_BLACK);                          // fondo negro del carril
+    ILI9341_FillRect(0, ly, COCKPIT_ZONE_W, 1, NOTE_COLOR[c]);                                    // linea fina de color arriba
+    ILI9341_FillRect(0, (uint16_t)(ly + GH1P_LANE_H - 1), COCKPIT_ZONE_W, 1, NOTE_COLOR[c]);      // linea fina de color abajo
+    gh1p_draw_zona(c, ly);
+}
+
+void Renderer_DrawModoGuitarHero1P(void) {   // dibuja la pantalla completa de Guitar Hero para 1 jugador desde cero
+    ILI9341_FillScreen(COLOR_BLACK);
+    ILI9341_FillRect(0, 0, COCKPIT_ZONE_W, 26, COLOR_DARKGRAY);   // franja de titulo, igual estilo que los otros modos 1P
+    draw_string_c(COCKPIT_ZONE_W / 2, 9, "GUITAR HERO", COLOR_WHITE, COLOR_DARKGRAY, 1);   // titulo centrado (ancho de RETRATO, no LCD_W que es paisaje)
+    for (uint8_t c = 0; c < 4; c++) gh1p_draw_carril(c);
+    for (uint8_t c = 0; c < 4; c++) gh1p_flash_pendiente[c] = 0;   // limpia flashes pendientes de una ronda anterior, ver gh_draw_jugador
+}
+
+static uint16_t gh1p_puntaje_dibujado = 0xFFFF;  // 0xFFFF fuerza el primer dibujo
+static uint16_t gh1p_combo_dibujado   = 0xFFFF;
+
+void Renderer_GH1P_ActualizarPuntaje(uint16_t puntaje, uint16_t combo) {   // redibuja solo el texto de puntaje/combo, si cambio (pantalla completa)
+    if (puntaje == gh1p_puntaje_dibujado && combo == gh1p_combo_dibujado) return;   // sin cambios, no repetir el trabajo
+    char buf[28];
+    snprintf(buf, sizeof(buf), "PUNTAJE:%u  COMBO:%u", (unsigned)puntaje, (unsigned)combo);   // arma el texto combinado
+    Texto_Sanear(buf);   // limpia cualquier byte no imprimible antes de dibujarlo
+    ILI9341_FillRect(0, 28, COCKPIT_ZONE_W, 14, COLOR_BLACK);           // borra la fila de puntaje antes de redibujar
+    draw_string_c(COCKPIT_ZONE_W / 2, 29, buf, COLOR_YELLOW, COLOR_BLACK, 1);  // centrado, debajo de la franja de titulo
+    gh1p_puntaje_dibujado = puntaje;
+    gh1p_combo_dibujado   = combo;
+}
+
+void Renderer_GH1P_DrawNota(const Nota_t *nota) {   // dibuja UNA nota circular en su posicion actual (pantalla completa)
+    if (!nota->activa) return;
+    int16_t ccx = (int16_t)(nota->x_rel + NOTE_W / 2);
+    if (ccx + (int16_t)GH1P_NOTE_R <= 0 || ccx - (int16_t)GH1P_NOTE_R >= (int16_t)COCKPIT_ZONE_W) return;  // fuera de la zona visible
+    int16_t acy = (int16_t)gh1p_note_cy(nota->carril);
+    ILI9341_FillCircle2(ccx, acy, GH1P_NOTE_R, NOTE_COLOR[nota->carril], GH1P_NOTE_R / 3, COLOR_WHITE);  // cuerpo + nucleo en 1 solo pase de SPI
+}
+
+void Renderer_GH1P_EraseNotaTrail(const Nota_t *nota, uint8_t speed) {   // borra la franja que la nota dejo atras (pantalla completa)
+    if (!nota->activa) return;   // nota inactiva, no habia nada dibujado
+    int16_t ccx_prev = nota->x_prev + (int16_t)NOTE_W / 2;   // centro x anterior de la nota
+    int16_t ex_end    = (int16_t)(ccx_prev + (int16_t)GH1P_NOTE_R + 1);   // borde derecho de la franja a borrar
+    int16_t ex_start  = (int16_t)(ex_end - (int16_t)speed);   // borde izquierdo = borde derecho menos lo que avanzo este tick
+    if (ex_start < 0) ex_start = 0;   // recorta contra el borde izquierdo de pantalla
+    if (ex_end > (int16_t)COCKPIT_ZONE_W) ex_end = (int16_t)COCKPIT_ZONE_W;   // recorta contra el borde derecho
+    int16_t ew = ex_end - ex_start;   // ancho final de la franja a borrar
+    if (ew <= 0) return;   // nada que borrar tras recortar
+
+    uint16_t ly = (uint16_t)(gh1p_note_cy(nota->carril) - GH1P_NOTE_R);
+    ILI9341_FillRect((uint16_t)ex_start, ly, (uint16_t)ew, (uint16_t)(2 * GH1P_NOTE_R + 1), COLOR_BLACK);
+
+    int16_t zona_x0 = (int16_t)GH_ZONA_CX - (int16_t)GH1P_ZONA_R;
+    int16_t zona_x1 = (int16_t)GH_ZONA_CX + (int16_t)GH1P_ZONA_R;
+    if (ex_start < zona_x1 && ex_end > zona_x0 && !gh1p_flash_pendiente[nota->carril]) {
+        gh1p_draw_zona(nota->carril, GH1P_LANE_TOP(nota->carril));   // repinta la zona completa encima de lo que se acaba de borrar
+    }
+}
+
+void Renderer_GH1P_FlashZona(uint8_t carril) {   // flash blanco de impacto (pantalla completa)
+    int16_t acx = (int16_t)GH_ZONA_CX;
+    int16_t acy = (int16_t)(GH1P_LANE_TOP(carril) + GH1P_LANE_H / 2);
+    ILI9341_FillCircle(acx, acy, GH1P_ZONA_R, COLOR_WHITE);   // flash blanco de impacto
+    gh1p_flash_pendiente[carril] = 1;
+}
+
+void Renderer_GH1P_ActualizarFlashes(void) {   // revierte los flashes pendientes del frame anterior (pantalla completa)
+    for (uint8_t c = 0; c < 4; c++) {
+        if (!gh1p_flash_pendiente[c]) continue;
+        gh1p_draw_zona(c, GH1P_LANE_TOP(c));   // revierte al estilo normal (anillo+centro)
+        gh1p_flash_pendiente[c] = 0;
+    }
+}
+
+void Renderer_GH1P_DibujarFin(uint16_t puntaje) {   // dibuja "RONDA COMPLETA" a pantalla completa
+    char linea[24];
+
+    /* NO tocar la orientacion aca: el modo 1 jugador se mantiene en retrato
+     * (240x320) durante TODA la partida, desde GuitarHero_IniciarSolo hasta
+     * el reintento -- esta pantalla es solo el final de una ronda, no un
+     * cambio de modo. Forzar paisaje (SetPortrait(0)) aca giraba la
+     * pantalla fisica a mitad de partida sin motivo. */
+    ILI9341_FillScreen(COLOR_BLACK);
+
+    draw_string_c(COCKPIT_ZONE_W / 2, 50, "RONDA COMPLETA", COLOR_GREEN, COLOR_BLACK, 2);
+
+    snprintf(linea, sizeof(linea), "Puntaje: %u", (unsigned)puntaje);
+    Texto_Sanear(linea);
+    draw_string_c(COCKPIT_ZONE_W / 2, 110, linea, COLOR_YELLOW, COLOR_BLACK, 2);
+
+    draw_string_c(COCKPIT_ZONE_W / 2, 170, "V/A/AM=jugar de nuevo", COLOR_GRAY, COLOR_BLACK, 1);   // pista: cualquier boton propio reintenta
+    draw_string_c(COCKPIT_ZONE_W / 2, 185, "ROJO 2s=menu", COLOR_GRAY, COLOR_BLACK, 1);              // pista: atajo de salida
+    draw_string_c(COCKPIT_ZONE_W / 2, 200, "VERDE 2s=cancion", COLOR_GRAY, COLOR_BLACK, 1);           // pista: atajo de cambio de cancion
+    draw_string_c(COCKPIT_ZONE_W / 2, 215, "AZUL 2s=dificultad", COLOR_GRAY, COLOR_BLACK, 1);         // pista: atajo de cambio de dificultad
+
+    gh1p_puntaje_dibujado = 0xFFFF;   // fuerza redibujo al reiniciar
+    gh1p_combo_dibujado   = 0xFFFF;
+    for (uint8_t c = 0; c < 4; c++) gh1p_flash_pendiente[c] = 0;
+}
+
+/* ========================================================================== */
 /* === SIMON+JOYSTICK — PANTALLA COMPLETA PARA 1 SOLO JUGADOR ================ */
 /* ========================================================================== */
 /* Solo existe la version de 1 jugador -- flechas grandes centradas, usando
@@ -1244,7 +1412,7 @@ void Renderer_GH_DibujarFin(uint8_t jugador, uint16_t puntaje) {
  * como la vista previa del recorrido de diseño utilizan esta version de 1
  * jugador. */
 
-static void sj1p_pad_rect(uint8_t d, uint16_t *bx, uint16_t *by, uint16_t *bw, uint16_t *bh) {
+static void sj1p_pad_rect(uint8_t d, uint16_t *bx, uint16_t *by, uint16_t *bw, uint16_t *bh) {   // bounding box de la flecha `d` del D-pad de Simon+Joystick 1 jugador
     /* ARRIBA/ABAJO un poco mas altas (84x68), IZQ/DER un poco mas angostas
      * (84x60) para que quepan en el hueco vertical entre las otras dos sin
      * traslaparse -- todas mas grandes que antes (74x60). */
@@ -1259,7 +1427,7 @@ static void sj1p_pad_rect(uint8_t d, uint16_t *bx, uint16_t *by, uint16_t *bw, u
  * del D-pad, armada con FillRect apiladas (sin primitiva de triangulo en
  * el driver). Mismo tamaño/posicion siempre -- redibujar con otro color
  * sobreescribe la anterior por completo, sin dejar residuos. */
-static void sj1p_dibujar_flecha(uint16_t bx, uint16_t by, uint16_t bw, uint16_t bh,
+static void sj1p_dibujar_flecha(uint16_t bx, uint16_t by, uint16_t bw, uint16_t bh,   // dibuja UNA flecha triangular del D-pad de 1 jugador
                                  uint8_t dir, uint16_t color) {
     int16_t cx   = (int16_t)(bx + bw / 2);                  // centro x de la caja
     int16_t cy   = (int16_t)(by + bh / 2);                  // centro y de la caja
@@ -1307,14 +1475,14 @@ static void sj1p_dibujar_flecha(uint16_t bx, uint16_t by, uint16_t bw, uint16_t 
 /* Solo flecha, sin caja de fondo ni nombre de texto, pero cada direccion
  * con su propio color (NOTE_COLOR/LANE_COLOR, los mismos 4 de siempre) --
  * apagada = version oscura, encendida = version brillante. */
-static void sj1p_pad_draw(uint8_t d, uint8_t activo) {
+static void sj1p_pad_draw(uint8_t d, uint8_t activo) {   // dibuja UNA flecha del D-pad (1 jugador), encendida o apagada
     uint16_t bx, by, bw, bh;
     sj1p_pad_rect(d, &bx, &by, &bw, &bh);                 // bounding box de esta direccion en pantalla completa
     uint8_t cidx = SJ_DPAD_COLOR_IDX[d];                    // color rotado para esta direccion (ver SJ_DPAD_COLOR_IDX)
     sj1p_dibujar_flecha(bx, by, bw, bh, d, activo ? NOTE_COLOR[cidx] : LANE_COLOR[cidx]);  // brillante si es el paso activo, apagado si no
 }
 
-void Renderer_DrawModoSimonJoystick1P(uint8_t paso) {
+void Renderer_DrawModoSimonJoystick1P(uint8_t paso) {   // dibuja la pantalla completa del D-pad de Simon+Joystick 1 jugador desde cero
     ILI9341_FillScreen(COLOR_BLACK);  // pantalla nueva desde cero
 
     ILI9341_FillRect(0, 0, LCD_W, 26, COLOR_DARKGRAY);  // franja de titulo
@@ -1323,7 +1491,7 @@ void Renderer_DrawModoSimonJoystick1P(uint8_t paso) {
     for (uint8_t d = 0; d < 4; d++) sj1p_pad_draw(d, paso == d);  // dibuja las 4 direcciones; la que coincide con "paso" se dibuja encendida
 }
 
-void Renderer_UpdateModoSimonJoystick1P(uint8_t paso_ant, uint8_t paso) {
+void Renderer_UpdateModoSimonJoystick1P(uint8_t paso_ant, uint8_t paso) {   // redibuja solo las 2 flechas que cambiaron de estado
     if (paso_ant == paso) return;                     // sin cambio, nada que redibujar
     if (paso_ant < 4) sj1p_pad_draw(paso_ant, 0);        // apaga la direccion anterior
     if (paso     < 4) sj1p_pad_draw(paso, 1);            // enciende la nueva
@@ -1339,13 +1507,13 @@ void Renderer_UpdateModoSimonJoystick1P(uint8_t paso_ant, uint8_t paso) {
 #define SJ1P_CURSOR_Y1 158  // y maxima
 #define SJ1P_CURSOR_R    6  // "radio" (medio ancho/alto) de la X del cursor
 
-static void sj1p_borrar_cursor(uint16_t px, uint16_t py) {
+static void sj1p_borrar_cursor(uint16_t px, uint16_t py) {   // borra el cursor "X" de su posicion anterior
     uint16_t d = (SJ1P_CURSOR_R + 1) * 2 + 1;  // lado del cuadrado a borrar, 1px mas grande por lado que la X dibujada (para no dejar residuo de las lineas diagonales)
     ILI9341_FillRect((uint16_t)(px - SJ1P_CURSOR_R - 1), (uint16_t)(py - SJ1P_CURSOR_R - 1),
                       d, d, COLOR_BLACK);  // borra el cuadrado centrado en la posicion anterior del cursor
 }
 
-static void sj1p_dibujar_cursor(uint16_t px, uint16_t py, uint16_t col) {
+static void sj1p_dibujar_cursor(uint16_t px, uint16_t py, uint16_t col) {   // dibuja el cursor "X" en su posicion actual
     ILI9341_DrawLine((int16_t)(px - SJ1P_CURSOR_R), (int16_t)(py - SJ1P_CURSOR_R),
                       (int16_t)(px + SJ1P_CURSOR_R), (int16_t)(py + SJ1P_CURSOR_R), col);  // diagonal \ de la X
     ILI9341_DrawLine((int16_t)(px - SJ1P_CURSOR_R), (int16_t)(py + SJ1P_CURSOR_R),
@@ -1355,7 +1523,7 @@ static void sj1p_dibujar_cursor(uint16_t px, uint16_t py, uint16_t col) {
 /* ultima posicion dibujada -- 0xFFFF = todavia no se ha dibujado */
 static uint16_t sj1p_cursor_px = 0xFFFF, sj1p_cursor_py = 0xFFFF;
 
-void Renderer_ResetCursorJoystick(void) {
+void Renderer_ResetCursorJoystick(void) {   // vuelve el cursor del centro del D-pad (1 jugador) a su posicion neutral
     sj1p_cursor_px = 0xFFFF;  // olvida la ultima posicion dibujada
     sj1p_cursor_py = 0xFFFF;  // -- el proximo Actualizar no intentara borrar una posicion vieja que ya no esta en pantalla (p.ej. tras un FillScreen)
 }
@@ -1363,7 +1531,7 @@ void Renderer_ResetCursorJoystick(void) {
 /* joy_x/joy_y: cuenta cruda del adc (0-4095). Mapea internamente al hueco
  * del centro del D-pad y solo redibuja si la posicion en pantalla cambio
  * (evita trafico SPI innecesario por jitter sub-pixel del filtro). */
-void Renderer_ActualizarCursorJoystick(uint16_t joy_x, uint16_t joy_y, uint8_t listo) {
+void Renderer_ActualizarCursorJoystick(uint16_t joy_x, uint16_t joy_y, uint8_t listo) {   // mueve el cursor "X" segun la posicion cruda actual del joystick
     /* EJES CRUZADOS: el joystick fisico usado en el modo de 1 jugador quedo
      * montado girado 90 grados respecto a la orientacion asumida por el
      * software, de modo que el canal "y" del ADC controla el movimiento
@@ -1403,12 +1571,12 @@ void Renderer_ActualizarCursorJoystick(uint16_t joy_x, uint16_t joy_y, uint8_t l
 static uint16_t cockp_cursor_px[2] = { 0xFFFF, 0xFFFF };  // ultima x local dibujada por jugador, 0xFFFF = ninguna todavia
 static uint16_t cockp_cursor_py[2] = { 0xFFFF, 0xFFFF };  // ultima y local dibujada por jugador
 
-static void cockp_borrar_cursor(uint8_t jugador, uint16_t lx, uint16_t ly) {
+static void cockp_borrar_cursor(uint8_t jugador, uint16_t lx, uint16_t ly) {   // borra el cursor "X" de la mitad de un jugador (2 jugadores)
     uint16_t d = (COCKP_CURSOR_R + 1) * 2 + 1;  // lado del cuadrado a borrar, 1px mas grande que la X por lado
     Cockpit_FillRect(jugador, (uint16_t)(lx - COCKP_CURSOR_R - 1), (uint16_t)(ly - COCKP_CURSOR_R - 1), d, d, COLOR_BLACK);  // borra (ya transformado segun el jugador)
 }
 
-static void cockp_dibujar_cursor(uint8_t jugador, uint16_t lx, uint16_t ly, uint16_t col) {
+static void cockp_dibujar_cursor(uint8_t jugador, uint16_t lx, uint16_t ly, uint16_t col) {   // dibuja el cursor "X" en la mitad de un jugador (2 jugadores)
     int16_t ax, ay, bx, by;
     Cockpit_Punto(jugador, (int16_t)(lx - COCKP_CURSOR_R), (int16_t)(ly - COCKP_CURSOR_R), &ax, &ay);  // extremo superior-izquierdo de la diagonal \, transformado
     Cockpit_Punto(jugador, (int16_t)(lx + COCKP_CURSOR_R), (int16_t)(ly + COCKP_CURSOR_R), &bx, &by);  // extremo inferior-derecho de esa misma diagonal
@@ -1421,12 +1589,12 @@ static void cockp_dibujar_cursor(uint8_t jugador, uint16_t lx, uint16_t ly, uint
 /* olvida la ultima posicion dibujada de ESE jugador -- llamar al (re)iniciar
  * su lado para que el proximo Actualizar no intente borrar una posicion de
  * una partida anterior */
-void Renderer_ResetCursorJoystick2P(uint8_t jugador) {
+void Renderer_ResetCursorJoystick2P(uint8_t jugador) {   // vuelve el cursor de un jugador a su posicion neutral (2 jugadores)
     cockp_cursor_px[jugador] = 0xFFFF;
     cockp_cursor_py[jugador] = 0xFFFF;
 }
 
-void Renderer_ActualizarCursorJoystick2P(uint8_t jugador, uint16_t joy_x, uint16_t joy_y, uint8_t listo) {
+void Renderer_ActualizarCursorJoystick2P(uint8_t jugador, uint16_t joy_x, uint16_t joy_y, uint8_t listo) {   // mueve el cursor de un jugador segun su joystick fisico correspondiente
     /* px se calcula a partir del canal "y" del ADC de forma invertida (un
      * valor bajo corresponde a un empujon hacia el lado derecho del D-pad,
      * ver SJ_DPAD_COLOR_IDX_P0), y py a partir del canal "x" sin invertir.
@@ -1453,16 +1621,30 @@ void Renderer_ActualizarCursorJoystick2P(uint8_t jugador, uint16_t joy_x, uint16
 /* === LISTA DE CANCIONES (pantalla "reproductor") =========================== */
 /* ========================================================================== */
 /* El ORDEN debe coincidir exactamente con CANCIONES_NOMBRE/DATA/LEN en main.c */
-#define RLC_N 6  // cantidad de canciones en la lista -- debe coincidir con CANCIONES_NOMBRE/DATA/LEN en main.c
+#define RLC_N 12  // cantidad de canciones en la lista -- debe coincidir con CANCIONES_DATA/LEN en main.c
 static const char *const RLC_NOMBRE[RLC_N] = {
-    "BIENVENIDA", "ESTRELLITA", "HIMNO ALEGRIA", "MARTINILLO", "NAVIDAD", "TETRIS"
+    "BIENVENIDA", "ESTRELLITA", "HIMNO ALEGRIA", "MARTINILLO", "NAVIDAD", "TETRIS",
+    "BOHEMIAN RHAPSODY", "DR DRE - STILL DRE", "NARUTO OP9", "ONE PIECE", "PIRATES CARIBBEAN", "TOKYO GHOUL"
 };
 
-#define RLC_ROW_Y0  30  // y donde arranca la primera fila de la lista
-#define RLC_ROW_H   30  // alto de cada fila -- agrandarlo separa mas las canciones entre si
+#define RLC_ROW_Y0   30  // y donde arranca la primera fila de la lista
+#define RLC_ROW_H    30  // alto de cada fila -- agrandarlo separa mas las canciones entre si
+#define RLC_VISIBLE   6  // filas visibles a la vez (RLC_ROW_Y0 + RLC_VISIBLE*RLC_ROW_H debe entrar antes de la franja de ayuda en y=220) -- con RLC_N > RLC_VISIBLE la lista scrollea
 
-static void rlc_draw_row(uint8_t i, uint8_t selected) {
-    uint16_t ry = (uint16_t)(RLC_ROW_Y0 + i * RLC_ROW_H);       // y de esta fila = base + indice*alto de fila
+/* Indice (dentro de RLC_NOMBRE) de la primera cancion visible en la ventana
+ * actual -- rlc_ajustar_scroll() la mueve lo minimo necesario para que el
+ * cursor quede siempre dentro de la ventana visible. */
+static uint8_t rlc_scroll_top = 0;
+
+static uint8_t rlc_ajustar_scroll(uint8_t cursor) {   // corrige rlc_scroll_top si hace falta para que `cursor` quede visible, y lo devuelve
+    if (cursor < rlc_scroll_top) rlc_scroll_top = cursor;   // el cursor se movio arriba de la ventana actual -- la ventana sube con el
+    else if (cursor >= (uint8_t)(rlc_scroll_top + RLC_VISIBLE)) rlc_scroll_top = (uint8_t)(cursor - RLC_VISIBLE + 1);   // se movio debajo de la ventana -- la ventana baja lo justo para mostrarlo al final
+    return rlc_scroll_top;
+}
+
+static void rlc_draw_row(uint8_t i, uint8_t selected) {   // dibuja UNA fila del menu de seleccion de cancion de Guitar Hero (i = indice dentro de RLC_NOMBRE, no fila visual)
+    uint8_t fila = (uint8_t)(i - rlc_scroll_top);              // posicion visual (0..RLC_VISIBLE-1) de esta cancion dentro de la ventana actual
+    uint16_t ry = (uint16_t)(RLC_ROW_Y0 + fila * RLC_ROW_H);    // y de esta fila = base + fila_visual*alto de fila
     uint16_t bg = selected ? COLOR_DARKGRAY : COLOR_BLACK;       // fondo resaltado si es la fila del cursor
 
     ILI9341_FillRect(0, ry, LCD_W, RLC_ROW_H - 2, bg);           // fondo de la fila (2px menos de alto que RLC_ROW_H, deja un hueco entre filas)
@@ -1473,30 +1655,48 @@ static void rlc_draw_row(uint8_t i, uint8_t selected) {
     }
 }
 
-void Renderer_DrawListaCanciones(uint8_t cursor) {
+void Renderer_DrawListaCanciones(uint8_t cursor) {   // dibuja el menu completo de seleccion de cancion desde cero
+    rlc_ajustar_scroll(cursor);   // asegura que la ventana visible incluya al cursor ANTES de dibujar
+
     ILI9341_FillScreen(COLOR_BLACK);  // pantalla nueva desde cero
 
     ILI9341_FillRect(0, 0, LCD_W, 26, COLOR_DARKGRAY);  // franja de titulo
     draw_string_c(LCD_W / 2, 9, "CANCIONES", COLOR_WHITE, COLOR_DARKGRAY, 1);  // titulo centrado
 
-    for (uint8_t i = 0; i < RLC_N; i++) rlc_draw_row(i, cursor == i);  // dibuja todas las filas, resaltando la del cursor
+    uint8_t desde  = rlc_scroll_top;                                                            // primera cancion visible
+    uint8_t hasta  = (uint8_t)((desde + RLC_VISIBLE < RLC_N) ? (desde + RLC_VISIBLE) : RLC_N);   // ultima visible +1, recortada contra RLC_N
+    for (uint8_t i = desde; i < hasta; i++) rlc_draw_row(i, cursor == i);   // dibuja solo las filas de la ventana actual, resaltando la del cursor
+
+    char pos[12];
+    snprintf(pos, sizeof(pos), "%u/%u", (unsigned)(cursor + 1), (unsigned)RLC_N);   // indicador "N/TOTAL" -- unica pista de que hay mas canciones fuera de la ventana visible
+    draw_string(LCD_W - 46, 9, pos, COLOR_WHITE, COLOR_DARKGRAY, 1);
 
     ILI9341_FillRect(0, 220, LCD_W, 20, COLOR_DARKGRAY);  // franja de ayuda inferior
     draw_string_c(LCD_W / 2, 226, "BOTON=CAMBIAR   JOYSTICK=EMPEZAR",
                   COLOR_GREEN, COLOR_DARKGRAY, 1);  // texto de ayuda: boton recorre/previsualiza la lista, cualquier joystick confirma y arranca Guitar Hero (unico modo que llega a esta pantalla, ver MenuCanciones_Procesar en main.c)
 }
 
-void Renderer_UpdateListaCanciones(uint8_t cursor_ant, uint8_t cursor) {
+void Renderer_UpdateListaCanciones(uint8_t cursor_ant, uint8_t cursor) {   // redibuja solo las filas que cambiaron de estado (o todo, si el cursor se salio de la ventana visible)
     if (cursor_ant == cursor) return;                      // sin cambio de cursor, nada que redibujar
+
+    uint8_t scroll_ant = rlc_scroll_top;                   // ventana ANTES de mover el cursor
+    if (rlc_ajustar_scroll(cursor) != scroll_ant) {         // el cursor se salio de la ventana visible -- hace falta redibujar todo (cambiaron las canciones mostradas Y el indicador de posicion)
+        Renderer_DrawListaCanciones(cursor);
+        return;
+    }
     if (cursor_ant < RLC_N) rlc_draw_row(cursor_ant, 0);      // apaga el resaltado de la fila anterior
     if (cursor     < RLC_N) rlc_draw_row(cursor, 1);           // enciende el resaltado de la fila nueva
+    char pos[12];
+    snprintf(pos, sizeof(pos), "%u/%u", (unsigned)(cursor + 1), (unsigned)RLC_N);
+    ILI9341_FillRect(LCD_W - 46, 9, 46, 9, COLOR_DARKGRAY);   // borra el indicador de posicion anterior antes de redibujarlo
+    draw_string(LCD_W - 46, 9, pos, COLOR_WHITE, COLOR_DARKGRAY, 1);
 }
 
 /* ========================================================================== */
 /* === CONTEO REGRESIVO ===================================================== */
 /* ========================================================================== */
 
-void Renderer_DrawConteo(uint8_t numero) {
+void Renderer_DrawConteo(uint8_t numero) {   // dibuja la pantalla del conteo regresivo 3-2-1-GO
     uint16_t bx = 100, by = 55, bw = 120, bh = 130;  // caja fija donde se dibuja el numero/GO!, centrada en pantalla
     if (numero == 3) ILI9341_FillScreen(COLOR_BLACK);  /* solo al entrar, limpia lo anterior */
     ILI9341_FillRect(bx, by, bw, bh, COLOR_BLACK);  // borra la caja antes de dibujar el numero nuevo (los numeros siguientes no limpian toda la pantalla, solo esta caja)
@@ -1534,7 +1734,7 @@ void Renderer_DrawConteo(uint8_t numero) {
 /* === PANTALLA DE RESULTADO ================================================ */
 /* ========================================================================== */
 
-void Renderer_DrawResultado(const GameState_t *gs) {
+void Renderer_DrawResultado(const GameState_t *gs) {   // dibuja la pantalla de resultado del recorrido de diseño (no la real de cada modo)
     ILI9341_FillScreen(COLOR_BLACK);  // pantalla nueva desde cero
 
     uint16_t s1 = gs->j[0].puntaje;  // puntaje final de J1
@@ -1565,8 +1765,8 @@ void Renderer_DrawResultado(const GameState_t *gs) {
     /* J2 — derecha */
     ILI9341_FillRect(180, 30, 130, 70, COLOR_DARKGRAY);         // panel de fondo del lado J2
     ILI9341_FillRect(182, 32, 20, 20, COLOR_P2);                 // cuadrado indicador del color de J2
-    draw_char(186, 37, 'J', COLOR_WHITE, COLOR_P2, 1);
-    draw_char(193, 37, '2', COLOR_WHITE, COLOR_P2, 1);
+    draw_char(186, 37, 'J', COLOR_WHITE, COLOR_P2, 1);   // etiqueta "J2" dentro del cuadrado -- letra J
+    draw_char(193, 37, '2', COLOR_WHITE, COLOR_P2, 1);   // etiqueta "J2" -- digito 2
     {
         uint8_t d[4] = {
             (uint8_t)((s2/1000)%10),(uint8_t)((s2/100)%10),
@@ -1589,16 +1789,16 @@ void Renderer_DrawResultado(const GameState_t *gs) {
 
     } else if (s2 > s1) {
         /* Jugador 2 gana */
-        ILI9341_FillRect(20, gy, 280, 80, COLOR_P2);
-        ILI9341_FillRect(24, gy+4, 272, 72, COLOR_BLACK);
+        ILI9341_FillRect(20, gy, 280, 80, COLOR_P2);              // marco exterior del color de J2 (mismo patron que el bloque de J1, en su color)
+        ILI9341_FillRect(24, gy+4, 272, 72, COLOR_BLACK);          // interior negro
         draw_string_c(LCD_W/2, gy + 12, "GANADOR", COLOR_P2, COLOR_BLACK, 2);
         draw_string_c(LCD_W/2, gy + 40, "JUGADOR 2", COLOR_P2, COLOR_BLACK, 2);
 
     } else {
         /* Empate */
         ILI9341_FillRect(20, gy, 280, 80, COLOR_YELLOW);         // marco amarillo (ni color de J1 ni de J2, para no favorecer visualmente a ninguno)
-        ILI9341_FillRect(24, gy+4, 272, 72, COLOR_BLACK);
-        draw_string_c(LCD_W/2, gy + 22, "EMPATE", COLOR_YELLOW, COLOR_BLACK, 3);
+        ILI9341_FillRect(24, gy+4, 272, 72, COLOR_BLACK);         // interior negro
+        draw_string_c(LCD_W/2, gy + 22, "EMPATE", COLOR_YELLOW, COLOR_BLACK, 3);   // texto centrado a escala 3, mas grande que "GANADOR" al no tener nombre de jugador debajo
     }
 
     /* === Comparacion de combo maximo (texto) === */
@@ -1617,7 +1817,7 @@ void Renderer_DrawResultado(const GameState_t *gs) {
 /* === ACTUALIZACION DE SCORES Y COMBO (JUGANDO) ============================ */
 /* ========================================================================== */
 
-void Renderer_UpdateScores(const GameState_t *gs) {
+void Renderer_UpdateScores(const GameState_t *gs) {   // redibuja solo la barra y los digitos de puntaje que cambiaron
     for (uint8_t p = 0; p < 2; p++) {                        // recorre los 2 jugadores
         uint16_t xo  = PLAYER_X_OFF[p];                        // offset x de este jugador
         uint16_t col = (p == 0) ? COLOR_P1 : COLOR_P2;          // color de este jugador
@@ -1640,13 +1840,13 @@ void Renderer_UpdateScores(const GameState_t *gs) {
 /* === NOTA: DIBUJO Y BORRADO DELTA ========================================= */
 /* ========================================================================== */
 
-void Renderer_FlashPressZone(uint8_t jugador, uint8_t carril, uint16_t color) {
+void Renderer_FlashPressZone(uint8_t jugador, uint8_t carril, uint16_t color) {   // pinta la zona de golpe rectangular del recorrido de diseño de un color (efecto de flash)
     uint16_t xo = PLAYER_X_OFF[jugador];                                   // offset x de este jugador
     uint16_t ly = LANE_TOP(carril);                                        // y de este carril
     ILI9341_FillRect(xo, ly + NOTE_Y_PAD, PRESS_ZONE_W, NOTE_H, color);     // repinta la zona de golpe del color pedido (usado para el flash al acertar/fallar)
 }
 
-void Renderer_DrawNota(const Nota_t *nota, uint16_t x_off) {
+void Renderer_DrawNota(const Nota_t *nota, uint16_t x_off) {   // dibuja una nota del recorrido de diseño (rectangulo, no circulo) en su carril
     if (!nota->activa) return;                                    // nota inactiva, no dibujar
     int16_t x_abs = (int16_t)x_off + nota->x_rel;                  // x absoluta en pantalla = offset del jugador + x relativa de la nota
     if (x_abs + (int16_t)NOTE_W <= 0 || x_abs >= (int16_t)PLAYER_W) return;  // la nota esta completamente fuera de la mitad de este jugador, no dibujar
@@ -1663,7 +1863,7 @@ void Renderer_DrawNota(const Nota_t *nota, uint16_t x_off) {
                      NOTE_COLOR[nota->carril]);                     // dibuja el rectangulo de la nota (o la parte visible de ella), del color de su carril
 }
 
-void Renderer_EraseNotaTrail(const Nota_t *nota, uint16_t x_off, uint8_t speed) {
+void Renderer_EraseNotaTrail(const Nota_t *nota, uint16_t x_off, uint8_t speed) {   // borra la franja que la nota del recorrido de diseño dejo atras al caer
     if (!nota->activa) return;                                     // nota inactiva, no habia nada dibujado
 
     int16_t ex_start = nota->x_prev + (int16_t)NOTE_W - (int16_t)speed;  // borde izquierdo de la franja a borrar: borde derecho de la posicion anterior menos lo que avanzo
@@ -1702,46 +1902,46 @@ void Renderer_EraseNotaTrail(const Nota_t *nota, uint16_t x_off, uint8_t speed) 
 /* === DISPATCHER PRINCIPAL ================================================= */
 /* ========================================================================== */
 
-static void draw_heartbeat(void) {
-    static uint32_t hb_tick = 0;
-    static uint8_t  hb_on   = 0;
-    uint32_t now = HAL_GetTick();
-    if (now - hb_tick >= 500) {
-        hb_tick = now;
-        hb_on   = !hb_on;
+static void draw_heartbeat(void) {   // parpadea el LED rojo de J1 cada 500ms como heartbeat, mientras no hay una partida de BOTONES en curso
+    static uint32_t hb_tick = 0;   // tick del ultimo cambio de estado
+    static uint8_t  hb_on   = 0;   // 1=encendido, 0=apagado
+    uint32_t now = HAL_GetTick();   // tick actual
+    if (now - hb_tick >= 500) {   // pasaron 500ms desde el ultimo cambio
+        hb_tick = now;   // reinicia el temporizador
+        hb_on   = !hb_on;   // invierte el estado
         ILI9341_FillRect(LCD_W - 10, 1, 8, 8,
-                         hb_on ? COLOR_WHITE : COLOR_BLACK);
+                         hb_on ? COLOR_WHITE : COLOR_BLACK);   // pinta el cuadradito en la esquina superior derecha, blanco u negro segun el estado
     }
 }
 
-void Renderer_Update(GameState_t *gs) {
-    draw_heartbeat();
+void Renderer_Update(GameState_t *gs) {   // tick de render del recorrido de diseño (modo JUGANDO): mueve/dibuja notas y actualiza puntajes
+    draw_heartbeat();   // parpadeo de diagnostico, corre siempre sin importar la pantalla actual
 
-    switch (gs->estado) {
+    switch (gs->estado) {   // que dibujar depende del estado actual de esta maquina de estados legada (GameState_t) -- no confundir con DemoScreen_t, la que usa el flujo real del juego en main.c
 
     case ESTADO_SPLASH:
-        if (!gs->pantalla_init) {
-            gs->pantalla_init = 1;
+        if (!gs->pantalla_init) {   // solo la primera vez que se entra a este estado
+            gs->pantalla_init = 1;   // marca que ya se dibujo el fondo, para no repetirlo cada tick
             Renderer_DrawSplash();
         }
         /* Parpadeo "LISTO PARA JUGAR?" cada 500ms */
         {
-            static uint32_t blink_tick = 0;
-            static uint8_t  blink_on   = 1;
+            static uint32_t blink_tick = 0;   // tick del ultimo cambio de estado del parpadeo
+            static uint8_t  blink_on   = 1;   // 1=texto visible, 0=texto oculto (mismo color que el fondo)
             uint32_t now = HAL_GetTick();
-            if (now - blink_tick >= 500) {
-                blink_tick = now;
-                blink_on   = !blink_on;
+            if (now - blink_tick >= 500) {   // pasaron 500ms
+                blink_tick = now;   // reinicia el temporizador
+                blink_on   = !blink_on;   // invierte el estado
                 draw_string_c(LCD_W / 2, 213,
                               "LISTO PARA JUGAR?",
                               blink_on ? COLOR_GREEN : COLOR_DARKGRAY,
-                              COLOR_DARKGRAY, 1);
+                              COLOR_DARKGRAY, 1);   // texto visible en verde, u oculto (mismo color que el fondo) segun el estado
             }
         }
         break;
 
     case ESTADO_MENU_NIVEL:
-        if (!gs->pantalla_init) {
+        if (!gs->pantalla_init) {   // solo la primera vez que se entra a este estado
             gs->pantalla_init = 1;
             Renderer_DrawMenu(gs->menu_cursor);
         }
@@ -1752,22 +1952,22 @@ void Renderer_Update(GameState_t *gs) {
         break;
 
     case ESTADO_JUGANDO:
-        if (!gs->pantalla_init) {
+        if (!gs->pantalla_init) {   // solo la primera vez que se entra a este estado
             gs->pantalla_init = 1;
             Renderer_DrawBackground(gs);
             Renderer_UpdateScores(gs);
         }
         /* Render delta de notas */
-        for (uint8_t i = 0; i < MAX_NOTES; i++) {
+        for (uint8_t i = 0; i < MAX_NOTES; i++) {   // recorre TODAS las notas posibles (activas o no)
             Nota_t *n = &gs->notas[i];
-            if (!n->activa) continue;
-            Renderer_EraseNotaTrail(n, PLAYER_X_OFF[n->jugador], gs->nota_speed);
-            Renderer_DrawNota(n, PLAYER_X_OFF[n->jugador]);
+            if (!n->activa) continue;   // nota libre, nada que dibujar
+            Renderer_EraseNotaTrail(n, PLAYER_X_OFF[n->jugador], gs->nota_speed);   // borra la franja que dejo en el tick anterior
+            Renderer_DrawNota(n, PLAYER_X_OFF[n->jugador]);   // dibuja la nota en su posicion actual
         }
         break;
 
     case ESTADO_RESULTADO:
-        if (!gs->pantalla_init) {
+        if (!gs->pantalla_init) {   // solo la primera vez que se entra a este estado
             gs->pantalla_init = 1;
             Renderer_DrawResultado(gs);
         }

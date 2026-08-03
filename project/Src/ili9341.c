@@ -41,11 +41,11 @@ uint16_t ILI9341_H = 240;   // alto activo en pixeles
  * forma de saberlo, la pantalla es solo-escritura); pero como ambos casos
  * vienen de la misma fuente de ruido, en la practica suelen ocurrir en la
  * misma rafaga. */
-static volatile uint8_t lcd_spi_fallas_seguidas = 0;
+static volatile uint8_t lcd_spi_fallas_seguidas = 0;   // contador de fallas de SPI consecutivas, arranca en 0 (bus sano)
 #define LCD_SPI_FALLAS_UMBRAL  3   // fallas seguidas antes de pedir un reinit completo -- evita reaccionar a un unico glitch aislado que ya se recupera solo
 
-static void LCD_SPI_Send(const uint8_t *data, uint16_t len, uint32_t timeout) {
-    if (HAL_SPI_Transmit(&hspi1, (uint8_t *)data, len, timeout) != HAL_OK) {
+static void LCD_SPI_Send(const uint8_t *data, uint16_t len, uint32_t timeout) {   // envoltorio de bajo nivel de HAL_SPI_Transmit con recuperacion de errores (ver comentario de arriba)
+    if (HAL_SPI_Transmit(&hspi1, (uint8_t *)data, len, timeout) != HAL_OK) {   // intenta la transmision; si falla o agota el timeout, entra a la rama de recuperacion
         HAL_SPI_Abort(&hspi1);   // descarta la transaccion fallida y regresa hspi1.State a HAL_SPI_STATE_READY
         if (lcd_spi_fallas_seguidas < 0xFF) lcd_spi_fallas_seguidas++;
     } else {
@@ -58,8 +58,8 @@ static void LCD_SPI_Send(const uint8_t *data, uint16_t len, uint32_t timeout) {
  * el llamador debe reinicializar la pantalla por completo (ILI9341_Init())
  * y forzar un redibujo total de lo que se este mostrando -- el contenido
  * viejo del GRAM ya no es confiable. */
-uint8_t ILI9341_FalloComunicacionDetectado(void) {
-    if (lcd_spi_fallas_seguidas < LCD_SPI_FALLAS_UMBRAL) return 0;
+uint8_t ILI9341_FalloComunicacionDetectado(void) {   // consultada desde el loop principal de main.c, ver comentario de lcd_spi_fallas_seguidas arriba
+    if (lcd_spi_fallas_seguidas < LCD_SPI_FALLAS_UMBRAL) return 0;   // todavia no se llego al umbral de fallas seguidas: nada que reportar
     lcd_spi_fallas_seguidas = 0;   // rearma para la proxima rafaga de fallas
     return 1;
 }
@@ -194,7 +194,7 @@ void ILI9341_SetWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {   /
     LCD_DC_HIGH();                         // pasa a modo DATOS: deja el bus listo para los pixeles -- CS se queda BAJO a proposito (ver ILI9341_EndWrite)
 }
 
-void ILI9341_EndWrite(void) {
+void ILI9341_EndWrite(void) {   // cierra una transaccion de escritura de pixeles abierta por ILI9341_SetWindow
     LCD_CS_HIGH();   // sube Chip Select: cierra la transaccion de escritura abierta por SetWindow -- hay que llamarla siempre despues de escribir pixeles, si no el bus queda "colgado" en modo dato
 }
 
@@ -215,7 +215,7 @@ void ILI9341_EndWrite(void) {
  * llamada. */
 static uint8_t ili9341_flip_180 = 0;   // bandera persistente: 1 = mantener el panel girado 180 en cada llamada a SetPortrait futura, 0 = normal
 
-void ILI9341_SetPortrait(uint8_t portrait) {
+void ILI9341_SetPortrait(uint8_t portrait) {   // 1=retrato 240x320, 0=paisaje 320x240 -- reaplica tambien el ultimo flip180 pedido (ver bandera de arriba)
     uint8_t madctl = portrait ? ILI9341_MADCTL_PORTRAIT : ILI9341_MADCTL_LANDSCAPE;   // valor base de MADCTL segun se pida retrato (240x320) o paisaje (320x240)
     if (ili9341_flip_180) madctl ^= 0xC0;   // si hay un flip180 pendiente, invierte los bits MY|MX (0xC0) sobre la orientacion base para que el flip sobreviva al cambio de orientacion
     LCD_CmdData(0x36, &madctl, 1);          // aplica el MADCTL calculado al controlador
@@ -229,7 +229,7 @@ void ILI9341_SetPortrait(uint8_t portrait) {
  * cambian porque MV (swap fila/col) no se toca. Guarda el pedido en
  * ili9341_flip_180 para que sobreviva a los ILI9341_SetPortrait() que
  * vengan despues (ver comentario arriba). */
-void ILI9341_SetFlip180(uint8_t flip) {
+void ILI9341_SetFlip180(uint8_t flip) {   // 1=panel rotado 180 grados, 0=normal -- misma orientacion logica (ancho/alto no cambian)
     ili9341_flip_180 = flip;   // guarda el pedido de flip para que SetPortrait lo siga aplicando en cada cambio de pantalla futuro
     uint8_t portrait = (ILI9341_H > ILI9341_W) ? 1 : 0;   // detecta la orientacion ACTUAL mirando las dimensiones ya activas (no recibe el parametro, lo infiere)
     uint8_t madctl    = portrait ? ILI9341_MADCTL_PORTRAIT : ILI9341_MADCTL_LANDSCAPE;   // MADCTL base para esa orientacion, todavia sin flip
@@ -241,7 +241,7 @@ void ILI9341_SetFlip180(uint8_t flip) {
 /* === ESCRITURA DE PIXELES ================================================= */
 /* ========================================================================== */
 
-void ILI9341_WritePixels(const uint8_t *buf, uint32_t len_bytes) {
+void ILI9341_WritePixels(const uint8_t *buf, uint32_t len_bytes) {   // manda un buffer crudo de pixeles RGB565 ya dentro de una ventana abierta por SetWindow
     LCD_DC_HIGH();   // modo datos: lo que sigue son pixeles, no comandos
     /* HAL_SPI_Transmit tiene Size uint16_t (max 65535) — enviar en trozos */
     while (len_bytes > 0) {   // repite hasta vaciar el buffer completo, porque el HAL solo admite hasta 65535 bytes por transmision
@@ -256,7 +256,7 @@ void ILI9341_WritePixels(const uint8_t *buf, uint32_t len_bytes) {
 /* === FIGURAS BASICAS ======================================================= */
 /* ========================================================================== */
 
-void ILI9341_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
+void ILI9341_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {   // rectangulo relleno -- primitiva base que reutilizan casi todas las demas funciones de dibujo de este archivo
     if (!w || !h) return;                              // ancho o alto 0: no hay nada que dibujar, evita mandar una ventana invalida al controlador
     if (x >= ILI9341_W || y >= ILI9341_H) return;       // el rectangulo arranca totalmente fuera de la pantalla activa: no dibuja nada (clipping trivial)
 
@@ -280,15 +280,15 @@ void ILI9341_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t c
     ILI9341_EndWrite();   // cierra la transaccion de escritura abierta por SetWindow, sube CS
 }
 
-void ILI9341_FillScreen(uint16_t color) {
+void ILI9341_FillScreen(uint16_t color) {   // llena toda la pantalla activa de un solo color
     ILI9341_FillRect(0, 0, ILI9341_W, ILI9341_H, color);   // reutiliza FillRect cubriendo toda la pantalla activa -- respeta automaticamente la orientacion actual (ILI9341_W/H)
 }
 
-void ILI9341_DrawPixel(uint16_t x, uint16_t y, uint16_t color) {
+void ILI9341_DrawPixel(uint16_t x, uint16_t y, uint16_t color) {   // pinta un solo pixel
     ILI9341_FillRect(x, y, 1, 1, color);   // pinta un unico pixel reutilizando FillRect con ancho y alto 1 -- simple pero no la forma mas rapida si se llama muchas veces seguidas (cada llamada abre y cierra su propia ventana SPI)
 }
 
-void ILI9341_DrawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
+void ILI9341_DrawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {   // rectangulo SIN relleno (solo contorno), armado con 4 FillRect angostos
     if (!w || !h) return;   // sin ancho o alto no hay nada que dibujar
     ILI9341_FillRect(x,         y,         w, 1, color);   // borde superior: franja de 1 pixel de alto a todo lo ancho
     ILI9341_FillRect(x,         y + h - 1, w, 1, color);   // borde inferior: misma franja pero en la ultima fila del rectangulo
@@ -298,7 +298,7 @@ void ILI9341_DrawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t c
 
 /* Bresenham clasico. Los tramos horizontales/verticales se despachan como
  * FillRect de una fila/columna para aprovechar la rafaga SPI. */
-void ILI9341_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) {
+void ILI9341_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) {   // linea entre 2 puntos cualquiera; casos horizontal/vertical van por atajo, el resto por Bresenham
     if (y0 == y1) {   // caso especial: linea perfectamente horizontal -- se manda como un solo FillRect (mucho mas rapido que pixel por pixel)
         int16_t x = (x0 < x1) ? x0 : x1;   // toma el extremo izquierdo de la linea como punto de partida del rectangulo
         uint16_t w = (uint16_t)((x0 < x1) ? (x1 - x0) : (x0 - x1)) + 1;   // ancho del rectangulo = distancia entre extremos +1 (incluye ambos puntos)
@@ -328,7 +328,7 @@ void ILI9341_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t c
 }
 
 /* Circulo de punto medio (Bresenham) — solo contorno, 8 octantes por simetria. */
-void ILI9341_DrawCircle(int16_t xc, int16_t yc, int16_t r, uint16_t color) {
+void ILI9341_DrawCircle(int16_t xc, int16_t yc, int16_t r, uint16_t color) {   // solo el contorno del circulo (sin relleno)
     int16_t x = r, y = 0, err = 0;   // arranca en el punto mas a la derecha del circulo (x=r, y=0), algoritmo de punto medio
 
     while (x >= y) {   // recorre solo un octante (1/8 del circulo) y refleja el resto por simetria -- mucho mas barato que calcular los 360 grados
@@ -348,7 +348,7 @@ void ILI9341_DrawCircle(int16_t xc, int16_t yc, int16_t r, uint16_t color) {
 }
 
 /* Circulo relleno — barrido de lineas horizontales entre los bordes de cada fila. */
-void ILI9341_FillCircle(int16_t xc, int16_t yc, int16_t r, uint16_t color) {
+void ILI9341_FillCircle(int16_t xc, int16_t yc, int16_t r, uint16_t color) {   // circulo RELLENO -- el que usa renderer.c para los domos de los botones y las notas
     for (int16_t y = -r; y <= r; y++) {   // recorre cada fila del circulo, desde -r hasta +r relativo al centro
         int16_t dx = (int16_t)((int32_t)r * r - (int32_t)y * y);   // por Pitagoras: el cuadrado de la mitad del ancho de esta fila (r²-y²)
         /* raiz entera aproximada por busqueda lineal (r es pequeño en pantalla) */
@@ -363,11 +363,75 @@ void ILI9341_FillCircle(int16_t xc, int16_t yc, int16_t r, uint16_t color) {
     }
 }
 
+/* Circulo relleno de 2 colores CONCENTRICOS (anillo/cuerpo exterior +
+ * nucleo interior) en un solo pase por fila -- pensado para el patron que
+ * se repite en todo el proyecto (domos de boton, notas, zonas de golpe: un
+ * circulo grande de un color con un circulo mas chico centrado encima de
+ * otro color). Dibujarlos con 2 llamadas separadas a ILI9341_FillCircle
+ * pinta la region central DOS veces (una vez el color exterior, tapado
+ * despues por el interior) y abre una ventana SPI nueva por cada fila de
+ * CADA uno de los 2 circulos por separado. Esta version arma un unico
+ * buffer de fila con ambos colores ya resueltos y abre una sola ventana
+ * SPI por fila (para el circulo completo, no 2), lo que corta a la mitad
+ * la cantidad de transacciones SPI y elimina el repintado duplicado del
+ * centro -- relevante en Guitar Hero a 2 jugadores, donde se dibujan
+ * varias notas por tick y el tiempo de SPI extra puede hacer que un frame
+ * se pase de los 33ms del loop principal (RENDER_TICK_MS), sintiendose
+ * como lag y a veces perdiendo la lectura de botones de ese tick.
+ * r_in<=0 equivale a un ILI9341_FillCircle normal (solo color_out). */
+void ILI9341_FillCircle2(int16_t xc, int16_t yc, int16_t r_out, uint16_t color_out,
+                          int16_t r_in, uint16_t color_in) {
+    uint8_t hi_out = (uint8_t)(color_out >> 8), lo_out = (uint8_t)(color_out & 0xFF);   // bytes RGB565 del color exterior, calculados una sola vez fuera del loop de filas
+    uint8_t hi_in  = (uint8_t)(color_in  >> 8), lo_in  = (uint8_t)(color_in  & 0xFF);   // idem para el color interior
+
+    for (int16_t y = -r_out; y <= r_out; y++) {   // recorre cada fila del circulo EXTERIOR, desde -r_out hasta +r_out
+        int16_t yy = (int16_t)(yc + y);   // coordenada Y real en pantalla de esta fila
+        if (yy < 0 || yy >= (int16_t)ILI9341_H) continue;   // fila fuera de pantalla (arriba o abajo) -- nada que dibujar en esta vuelta
+
+        int32_t dx_out = (int32_t)r_out * r_out - (int32_t)y * y;   // Pitagoras: cuadrado de la media anchura del circulo exterior en esta fila
+        int16_t half_out = 0;
+        while ((int32_t)(half_out + 1) * (half_out + 1) <= dx_out) half_out++;   // misma busqueda lineal de raiz entera que ILI9341_FillCircle
+
+        int16_t half_in = -1;   // -1 = esta fila no llega a cruzar el circulo interior (fuera de su rango vertical)
+        if (r_in > 0) {   // solo hay circulo interior si se pidio un radio positivo
+            int32_t dx_in = (int32_t)r_in * r_in - (int32_t)y * y;   // mismo calculo de Pitagoras, con el radio interior
+            if (dx_in >= 0) {   // esta fila SI cae dentro del rango vertical del circulo interior
+                half_in = 0;
+                while ((int32_t)(half_in + 1) * (half_in + 1) <= dx_in) half_in++;
+            }
+        }
+
+        int16_t xx0 = (int16_t)(xc - half_out);   // columna donde arranca la franja de esta fila (todavia sin recortar contra la pantalla)
+        int16_t xx1 = (int16_t)(xc + half_out);   // columna donde termina (inclusive)
+        if (xx1 < 0 || xx0 >= (int16_t)ILI9341_W) continue;   // la franja completa cae fuera de pantalla (izquierda o derecha) -- nada que dibujar
+        if (xx0 < 0) xx0 = 0;                                    // recorta el arranque si se sale por la izquierda
+        if (xx1 >= (int16_t)ILI9341_W) xx1 = (int16_t)(ILI9341_W - 1);   // recorta el final si se sale por la derecha
+        uint16_t w = (uint16_t)(xx1 - xx0 + 1);   // ancho final ya recortado de la franja de esta fila
+        if (w == 0 || w > ILI9341_MAXDIM) continue;   // seguridad: nunca exceder el tamaño del buffer estatico de fila
+
+        int16_t in_x0 = (int16_t)(xc - half_in);   // columna absoluta donde arranca el nucleo interior en esta fila (solo valido si half_in>=0)
+        int16_t in_x1 = (int16_t)(xc + half_in);   // columna absoluta donde termina el nucleo interior en esta fila
+
+        for (uint16_t i = 0; i < w; i++) {   // arma el buffer de ESTA fila con los 2 colores ya resueltos, un solo recorrido
+            int16_t px = (int16_t)(xx0 + i);   // columna absoluta de este pixel de la franja
+            uint8_t hi, lo;
+            if (half_in >= 0 && px >= in_x0 && px <= in_x1) { hi = hi_in;  lo = lo_in;  }   // este pixel cae dentro del nucleo interior
+            else                                             { hi = hi_out; lo = lo_out; }   // este pixel es del anillo/cuerpo exterior
+            lcd_row_buf[i * 2]     = hi;
+            lcd_row_buf[i * 2 + 1] = lo;
+        }
+
+        ILI9341_SetWindow((uint16_t)xx0, (uint16_t)yy, (uint16_t)xx1, (uint16_t)yy);   // UNA sola ventana SPI para toda la franja (los 2 colores incluidos), no 2 como antes
+        LCD_SPI_Send(lcd_row_buf, (uint16_t)(w * 2), 500);   // transmite la fila completa ya resuelta
+        ILI9341_EndWrite();   // cierra la transaccion de esta fila
+    }
+}
+
 /* ========================================================================== */
 /* === IMAGENES ============================================================== */
 /* ========================================================================== */
 
-void ILI9341_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t *data) {
+void ILI9341_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t *data) {   // vuelca un bitmap RGB565 (ej. splash_bg.h) tal cual, sin decodificar ningun formato de compresion
     if (!w || !h) return;                              // sin ancho o alto no hay imagen que dibujar
     if (x >= ILI9341_W || y >= ILI9341_H) return;       // si arranca totalmente fuera de pantalla, no dibuja nada
     if ((uint32_t)x + w > ILI9341_W) w = ILI9341_W - x;   // recorta el ancho si se sale por la derecha
@@ -386,7 +450,7 @@ void ILI9341_DrawImage(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uin
 /* representa -- para cambiar la forma de una letra/simbolo alcanza con editar */
 /* SOLO esos 5 bytes de su fila; no hace falta tocar nada mas del driver.      */
 
-static const uint8_t font5x7[][5] = {
+static const uint8_t font5x7[][5] = {   // tabla de glifos, un renglon por caracter ASCII 32-90 (ver comentario del bloque arriba para el formato de cada byte)
     {0x00,0x00,0x00,0x00,0x00}, /* ' ' 32 */
     {0x00,0x00,0x5F,0x00,0x00}, /* '!' 33 */
     {0x00,0x07,0x00,0x07,0x00}, /* '"' 34 */
@@ -448,7 +512,7 @@ static const uint8_t font5x7[][5] = {
     {0x61,0x51,0x49,0x45,0x43}, /* 'Z' 90 */
 };
 
-void ILI9341_DrawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg, uint8_t scale) {
+void ILI9341_DrawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg, uint8_t scale) {   // dibuja UN caracter de la fuente 5x7, escalado por `scale`
     if (c >= 'a' && c <= 'z') c = (char)(c - 32);   /* minusculas -> mayusculas */   // la tabla font5x7 solo tiene glifos en mayuscula, asi que normaliza antes de buscar
     if (c < 32 || c > 90) c = '?';   // cualquier caracter fuera del rango soportado (32-90) se dibuja como '?' en vez de leer memoria fuera de la tabla
     const uint8_t *g = font5x7[(uint8_t)c - 32];   // ubica la fila de la tabla de este caracter (indice 0 = espacio, codigo ASCII 32)
@@ -469,7 +533,7 @@ void ILI9341_DrawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg, 
     }
 }
 
-void ILI9341_DrawString(uint16_t x, uint16_t y, const char *s, uint16_t fg, uint16_t bg, uint8_t scale) {
+void ILI9341_DrawString(uint16_t x, uint16_t y, const char *s, uint16_t fg, uint16_t bg, uint8_t scale) {   // dibuja una cadena completa encadenando ILI9341_DrawChar caracter por caracter
     while (*s) {   // recorre la cadena caracter por caracter hasta el '\0' final
         ILI9341_DrawChar(x, y, *s, fg, bg, scale);   // dibuja el caracter actual en la posicion x,y actual
         x = (uint16_t)(x + 6u * scale);   // avanza x el ancho de un caracter (mismo calculo que `adv` en DrawChar) para que el siguiente no se superponga

@@ -73,7 +73,7 @@ static uint8_t    adc_rank_actual = 0;   /* 0=y1(rank1) 1=x1(rank2) 2=y2(rank3) 
  * de respuesta. Con el centro de cada eje calibrado en el arranque (ver
  * Joystick_Calibrar), no es necesario sacrificar suavidad de la señal a
  * cambio de velocidad de deteccion de direccion. */
-#define ADC_FILTRO_N     4
+#define ADC_FILTRO_N     4   // orden del filtro EMA -- subir este numero suaviza mas la lectura pero la hace mas lenta en reaccionar a un movimiento real del joystick
 static int32_t filtro_adc_x = 2048;   // acumulador del filtro EMA para el canal X de J1
 static int32_t filtro_adc_y = 2048;   // acumulador del filtro EMA para el canal Y de J1
 
@@ -119,7 +119,7 @@ static uint16_t centro_j2x = 2048, centro_j2y = 2048;   // idem para J2
  * jugadores (ver Joy_CursorEscala). Un poco mas generoso que
  * JOY_UMBRAL_DESVIO para dejar margen visible incluso antes de que la
  * direccion se registre como valida. */
-#define JOY_CURSOR_RANGO 350U
+#define JOY_CURSOR_RANGO 350U   // cuentas de desviacion del ADC que equivalen a "empuje a fondo" para el cursor visual -- bajar este numero hace que el cursor llegue al borde con un empuje mas chico del joystick
 
 /* Convierte una lectura cruda del ADC (0-4095) y el centro calibrado de ESE
  * eje en un valor sintetico tambien 0-4095, pero centrado en 2048 (reposo)
@@ -132,12 +132,12 @@ static uint16_t centro_j2x = 2048, centro_j2y = 2048;   // idem para J2
  * mueve unos pocos pixeles dentro de su caja, dando la impresion de que se
  * mueve para cualquier lado en vez de en linea recta hacia la direccion
  * empujada. */
-static uint16_t Joy_CursorEscala(uint16_t valor, uint16_t centro) {
+static uint16_t Joy_CursorEscala(uint16_t valor, uint16_t centro) {   // reescala una lectura cruda del ADC (centrada en `centro`) a la escala sintetica 0-4095 centrada en 2048 que usa el cursor del menu de 2 jugadores
     int32_t dev = (int32_t)valor - (int32_t)centro;   // desviacion con signo respecto al centro medido de este eje
-    int32_t s   = 2048 + (dev * 2048) / (int32_t)JOY_CURSOR_RANGO;   // reescala esa desviacion para que +-JOY_CURSOR_RANGO caiga en 0/4095
+    int32_t s = 2048 - (dev * 2048) / (int32_t)JOY_CURSOR_RANGO;   // reescala esa desviacion para que +-JOY_CURSOR_RANGO caiga en 0/4095
     if (s < 0) s = 0;         // clamp por si el empuje supera el rango esperado
-    if (s > 4095) s = 4095;
-    return (uint16_t)s;
+    if (s > 4095) s = 4095;   // clamp por el lado alto: nunca deja pasar de el maximo de una escala de 12 bits
+    return (uint16_t)s;   // devuelve el valor ya reescalado y recortado a 0-4095
 }
 
 /* Calcula el rango [bajo,alto] alrededor de un centro medido, con clamp a
@@ -281,25 +281,12 @@ static uint8_t Botones_LeerColor(uint8_t p) {   // p = jugador logico (0 o 1); r
 
         uint8_t flanco = (btn_prev[p][c] == GPIO_PIN_SET && cur == GPIO_PIN_RESET);   // flanco de bajada real: antes NO presionado (SET), ahora SI presionado (RESET, activo bajo)
         btn_prev[p][c] = cur;   // actualiza el "anterior" para la proxima llamada, sin importar si hubo flanco o no
-        if (flanco) {
+        if (flanco) {   // solo entra aca en el instante del flanco de presion, no en cada vuelta que el boton siga presionado
             printf("[INPUT] boton J%u = %s\r\n", (unsigned)(p + 1), COLOR_NOMBRE[c]);   // log por consola: que jugador y que color se detecto (siempre que hay flanco real, sin excepcion)
             return c;   // devuelve el color presionado y CORTA el for -- no sigue buscando otros botones este mismo tick
         }
     }
     return 0xFF;   // ningun boton tuvo flanco de presion estable este tick
-}
-
-/* Lectura de NIVEL (no de flanco) del boton "color" del jugador p: 1 si
- * esta presionado AHORA, 0 si no. Usada por las notas sostenidas de Guitar
- * Hero (ver GH_SOSTENIDA_DURACION_MS), que necesitan saber "sigue
- * presionado" en cada tick mientras se mantiene, algo que Botones_LeerColor
- * no puede responder porque solo informa flancos. Se apoya en btn_prev, que
- * Botones_LeerColor ya deja actualizado con el ultimo nivel CONFIRMADO
- * (antirrebotado) de cada boton -- no vuelve a leer el pin crudo ni duplica
- * el antirrebote. */
-static uint8_t Botones_ColorSostenido(uint8_t p, uint8_t color) {
-    if (btn_modo_1p || guitar_modo_1p) p = 0;   // misma correspondencia logico/fisico que Botones_LeerColor
-    return (btn_prev[p][color] == GPIO_PIN_RESET);   // activo en bajo
 }
 
 /* === PROTOTIPOS PRIVADOS ================================================== */
@@ -336,8 +323,8 @@ static void MX_USART2_UART_Init(void);    // configura USART2 (consola de depura
  * prescaler de 15, el temporizador cuenta a 1 MHz, de modo que el valor de
  * auto-recarga ARR = 1000000 / (2 * freq_hz) - 1 produce la alternancia del
  * pin a la frecuencia deseada. */
-#define BUZZER_TIM_TICK_HZ 1U   // frecuencia del tick de TIM4 tras aplicar el prescaler (1 MHz equivale a 1 tick por microsegundo); modificar este valor solo si cambia el prescaler configurado del temporizador
-#define BUZZER_TONO_HZ     4U   /* frecuencia (en Hz) que usa Buzzer_Beep() para los
+#define BUZZER_TIM_TICK_HZ 1000000U   // frecuencia del tick de TIM4 tras aplicar el prescaler (1 MHz equivale a 1 tick por microsegundo); modificar este valor solo si cambia el prescaler configurado del temporizador
+#define BUZZER_TONO_HZ     4000U   /* frecuencia (en Hz) que usa Buzzer_Beep() para los
     efectos de sonido cortos. Se eligio 4000 Hz porque los zumbadores
     piezoelectricos pequeños, como el utilizado en este montaje, suelen
     tener su punto de mayor volumen (resonancia) en el rango aproximado de
@@ -346,16 +333,16 @@ static void MX_USART2_UART_Init(void);    // configura USART2 (consola de depura
     habilitarse Buzzer_BarridoDiagnostico (ver BUZZER_DIAGNOSTICO_BARRIDO
     mas abajo). */   // cambiar este numero modifica el tono de todos los efectos de sonido cortos a la vez
 
-typedef struct {
+typedef struct {   // un paso de una melodia/patron de SFX -- el arreglo completo de pasos es lo que reciben Buzzer_Patron/Buzzer_Fondo_Iniciar
     uint16_t freq_hz;   /* 0=silencio, otro=tono en Hz */
     uint16_t dur_ms;    // duracion de este paso en milisegundos
 } PasoSonido_t;   // un "paso" de una melodia: una frecuencia sonando (o silencio) durante dur_ms
 
 static void Buzzer_SetSalida(uint16_t freq_hz) {   // arranca/detiene el tono del buzzer a la frecuencia dada (0 = silencio)
-    if (freq_hz == 0) {
+    if (freq_hz == 0) {   // caso silencio: no hay que calcular ningun periodo de timer, solo apagar todo
         HAL_TIM_Base_Stop_IT(&htim4);   // detiene la interrupcion periodica de TIM4 -- deja de alternar el pin
         HAL_GPIO_WritePin(BUZZER_PORT, BUZZER_PIN, GPIO_PIN_RESET);   // fuerza el pin del buzzer a nivel bajo para que quede en silencio real (no a medio ciclo)
-    } else {
+    } else {   // caso tono real: hay que reprogramar TIM4 para que alterne el pin a la frecuencia pedida
         uint32_t arr = (BUZZER_TIM_TICK_HZ / (2U * freq_hz)) - 1U;   // calcula el valor de auto-recarga (ARR) para que TIM4 desborde 2 veces por ciclo de la onda (2 flancos = 1 ciclo completo)
         HAL_TIM_Base_Stop_IT(&htim4);          // detiene el timer antes de reprogramarlo, para no dejarlo en un estado intermedio raro
         __HAL_TIM_SET_COUNTER(&htim4, 0);      // reinicia el contador del timer a 0
@@ -367,7 +354,7 @@ static void Buzzer_SetSalida(uint16_t freq_hz) {   // arranca/detiene el tono de
 /* Apunta directamente al arreglo constante de la melodia en curso, sin
  * copiarlo: dado que las canciones pueden tener decenas de notas, resultaria
  * ineficiente mantener un buffer propio de tamaño fijo. */
-static const PasoSonido_t *buzzer_pasos     = 0;   // puntero a la melodia/patron de SFX que esta sonando en primer plano ahora mismo (0 = ninguno)
+static const PasoSonido_t *buzzer_pasos     = 0;   // puntero a la melodia/patron de SFX que esta sonando en primer plano ahora mismo (0 = ninguno) -- apuntar esto a otro arreglo (via Buzzer_Patron) es lo unico necesario para sonar un patron distinto
 static uint16_t            buzzer_pasos_n   = 0;   // cantidad de pasos de esa melodia
 static uint16_t            buzzer_pos       = 0;   // indice del paso actual dentro de buzzer_pasos
 static uint32_t            buzzer_tick_paso = 0;   // tick en el que arranco el paso actual, para saber cuando pasar al siguiente
@@ -398,7 +385,7 @@ static void Buzzer_Beep(uint16_t duracion_ms) {   // sonido corto de un solo ton
  * MX_USART2_UART_Init), la frecuencia con mayor volumen percibido, para
  * luego fijar BUZZER_TONO_HZ a ese valor. */
 #define BUZZER_DIAGNOSTICO_BARRIDO 0   // establecer en 1 hace que Buzzer_BarridoDiagnostico() se ejecute una vez al arrancar, antes de la pantalla de bienvenida; se mantiene disponible para volver a caracterizar el zumbador si fuera necesario
-#if BUZZER_DIAGNOSTICO_BARRIDO
+#if BUZZER_DIAGNOSTICO_BARRIDO   // el bloque completo entre este #if y el #endif de abajo solo se COMPILA si la constante de arriba esta en 1 -- en 0, Buzzer_BarridoDiagnostico ni siquiera existe en el binario final
 static void Buzzer_BarridoDiagnostico(void) {   // reproduce un barrido de frecuencias para escuchar cual suena mas fuerte en ESTE buzzer especifico
     printf("\r\n[BUZZER] barrido de frecuencias -- escuchar y anotar cual suena mas fuerte\r\n");   // aviso por consola de que arranca el barrido
     for (uint16_t f = 200; f <= 5000; f = (uint16_t)(f + 200)) {   // recorre 200Hz a 5000Hz en pasos de 200Hz; cambiar estos numeros cambia el rango/resolucion del barrido
@@ -410,7 +397,7 @@ static void Buzzer_BarridoDiagnostico(void) {   // reproduce un barrido de frecu
     }
     printf("[BUZZER] fin del barrido\r\n\r\n");   // aviso de que termino todo el barrido
 }
-#endif
+#endif   // cierra el bloque condicionado por BUZZER_DIAGNOSTICO_BARRIDO
 
 /* Debe invocarse una vez por cada vuelta del bucle principal, sin importar
  * el estado del sistema. */
@@ -424,11 +411,11 @@ static void Buzzer_BarridoDiagnostico(void) {   // reproduce un barrido de frecu
  * perder un paso o reiniciar la cancion desde el principio. Ver
  * Buzzer_Fondo_Iniciar / Buzzer_Fondo_Detener mas abajo, una vez declaradas
  * las tablas CANCIONES_DATA / CANCIONES_LEN. */
-static const PasoSonido_t *buzzer_fondo_pasos     = 0;
-static uint16_t            buzzer_fondo_pasos_n   = 0;
-static uint16_t            buzzer_fondo_pos       = 0;
-static uint32_t            buzzer_fondo_tick_paso = 0;
-static uint8_t             buzzer_fondo_activo    = 0;
+static const PasoSonido_t *buzzer_fondo_pasos     = 0;   // puntero a la melodia de fondo actual (0 = ninguna todavia) -- lo cambia Buzzer_Fondo_Iniciar
+static uint16_t            buzzer_fondo_pasos_n   = 0;   // cantidad de pasos de esa melodia
+static uint16_t            buzzer_fondo_pos       = 0;   // indice del paso actual dentro de buzzer_fondo_pasos
+static uint32_t            buzzer_fondo_tick_paso = 0;   // tick en que arranco el paso actual, para saber cuando avanzar al siguiente
+static uint8_t             buzzer_fondo_activo    = 0;   // 1 mientras suena musica de fondo, 0 en silencio (splash, menus)
 
 /* Definida mas abajo, junto a las tablas CANCIONES_DATA/CANCIONES_LEN (las
  * necesita para elegir la proxima cancion) -- se declara aca para que
@@ -437,23 +424,23 @@ static uint8_t             buzzer_fondo_activo    = 0;
  * que la que esta sonando completa una vuelta entera, en vez de repetir
  * siempre la misma en loop (pedido explicito del usuario: "solo suena una
  * todo el tiempo"). */
-static void Buzzer_Fondo_RotarSiTermino(void);
+static void Buzzer_Fondo_RotarSiTermino(void);   // prototipo -- la definicion completa esta mas abajo, junto a las tablas de canciones que necesita
 
-static void Buzzer_Actualizar(void) {
-    if (buzzer_pos < buzzer_pasos_n) {
+static void Buzzer_Actualizar(void) {   // tick no bloqueante del buzzer: avanza el patron de SFX en curso y/o la musica de fondo, sin usar HAL_Delay
+    if (buzzer_pos < buzzer_pasos_n) {   // hay un SFX en primer plano todavia sonando (no llego al final del arreglo)
         /* SFX en primer plano en curso */
-        if (HAL_GetTick() - buzzer_tick_paso < buzzer_pasos[buzzer_pos].dur_ms) return;
-        buzzer_pos++;
-        buzzer_tick_paso = HAL_GetTick();
-        if (buzzer_pos < buzzer_pasos_n) {
-            Buzzer_SetSalida(buzzer_pasos[buzzer_pos].freq_hz);
-            return;
+        if (HAL_GetTick() - buzzer_tick_paso < buzzer_pasos[buzzer_pos].dur_ms) return;   // el paso actual del SFX todavia no cumplio su duracion -- no hace nada este tick
+        buzzer_pos++;   // ya paso el tiempo de este paso: avanza al siguiente del SFX
+        buzzer_tick_paso = HAL_GetTick();   // marca el instante de arranque del nuevo paso
+        if (buzzer_pos < buzzer_pasos_n) {   // todavia quedan pasos del SFX por sonar
+            Buzzer_SetSalida(buzzer_pasos[buzzer_pos].freq_hz);   // suena el siguiente paso
+            return;   // termina aca este tick, no sigue a la musica de fondo
         }
         /* el SFX termino recien en este mismo tick -- retomar la musica de
          * fondo YA (sin esperar a que termine su paso actual, que quedo
          * congelado mientras sonaba el SFX encima). */
-        Buzzer_SetSalida(buzzer_fondo_activo ? buzzer_fondo_pasos[buzzer_fondo_pos].freq_hz : 0);
-        return;
+        Buzzer_SetSalida(buzzer_fondo_activo ? buzzer_fondo_pasos[buzzer_fondo_pos].freq_hz : 0);   // retoma la nota de fondo que quedo congelada (o silencio si no habia musica de fondo activa)
+        return;   // termina el tick aca -- ya se atendio al SFX que acaba de terminar
     }
 
     /* sin SFX en curso: avanzar la musica de fondo normalmente (en loop) */
@@ -612,22 +599,476 @@ static const PasoSonido_t CANCION_TETRIS[] = {
 #undef TD
 #undef N
 
-typedef enum { CANCION_BIENVENIDA_IDX = 0, CANCION_ESTRELLITA_IDX, CANCION_HIMNO_IDX,
-               CANCION_MARTINILLO_IDX, CANCION_NAVIDAD_IDX, CANCION_TETRIS_IDX,
-               CANCIONES_N } CancionIdx_t;
+/* Canciones provistas por el profesor (prueba_de_sonido/sonidos, archivos .ino,
+ * convertidas de MIDI a Arduino con https://github.com/ShivamJoker/MIDI-to-Arduino)
+ * -- transcritas de forma mecanica y automatica (frecuencia+duracion+silencio de
+ * cada nota, tal cual las entrego el profesor) a pares PasoSonido_t, mismo
+ * formato que el resto del repertorio de arriba. */
+
+static const PasoSonido_t CANCION_BOHEMIAN[] = {   /* Bohemian-Rhapsody-1.ino -- transcrita de prueba_de_sonido/sonidos/Bohemian-Rhapsody-1.ino */
+    {294,394}, {392,402}, {0,9}, {233,394}, {0,17}, {196,86},
+    {0,265}, {349,1524}, {0,1729}, {392,394}, {0,17}, {392,325},
+    {0,86}, {466,146}, {0,265}, {523,308}, {0,103}, {622,360},
+    {0,51}, {622,51}, {0,360}, {466,368}, {0,454}, {466,111},
+    {0,300}, {392,420}, {0,402}, {466,522}, {0,711}, {349,771},
+    {0,51}, {392,77}, {0,334}, {440,651}, {0,1404}, {494,351},
+    {0,471}, {466,171}, {0,651}, {440,137}, {0,685}, {466,154},
+    {0,668}, {494,342}, {0,479}, {466,205}, {0,616}, {440,163},
+    {0,659}, {466,171}, {0,651}, {392,385}, {0,26}, {311,163},
+    {0,248}, {622,283}, {0,128}, {311,77}, {0,334}, {349,368},
+    {0,43}, {294,137}, {0,274}, {466,368}, {0,43}, {294,68},
+    {0,342}, {466,402}, {0,9}, {349,539}, {0,283}, {311,385},
+    {0,26}, {349,77}, {0,317}, {622,111}, {0,257}, {311,411},
+    {0,822}, {233,394}, {0,17}, {233,411}, {175,385}, {0,17},
+    {349,368}, {0,43}, {175,120}, {0,291}, {392,180}, {0,223},
+    {175,248}, {0,163}, {784,146}, {0,265}, {698,154}, {0,257},
+    {175,205}, {0,205}, {294,394}, {0,17}, {880,223}, {0,188},
+    {196,402}, {0,9}, {784,103}, {0,308}, {196,103}, {0,308},
+    {311,368}, {0,43}, {1175,120}, {0,291}, {262,402}, {0,9},
+    {1047,86}, {0,325}, {262,163}, {0,248}, {392,231}, {0,180},
+    {311,411}, {349,377}, {0,34}, {523,60}, {0,351}, {294,351},
+    {0,60}, {784,103}, {0,308}, {698,77}, {0,334}, {175,120},
+    {0,291}, {294,385}, {0,26}, {233,411}, {880,86}, {0,325},
+    {196,411}, {784,77}, {0,334}, {196,60}, {0,351}, {392,385},
+    {0,26}, {311,377}, {0,34}, {392,342}, {0,68}, {392,94},
+    {0,317}, {392,111}, {0,300}, {311,402}, {0,9}, {392,240},
+    {0,171}, {311,411}, {392,351}, {0,60}, {311,411}, {392,94},
+    {0,317}, {311,240}, {0,171}, {622,368}, {0,43}, {392,154},
+    {0,257}, {466,368}, {0,43}, {311,68}, {0,342}, {349,368},
+    {0,43}, {233,103}, {0,308}, {392,385}, {0,26}, {311,342},
+    {0,68}, {1175,77}, {0,334}, {262,394}, {0,17}, {1047,68},
+    {0,342}, {262,68}, {0,342}, {415,385}, {0,26}, {349,137},
+    {0,274}, {698,103}, {0,308}, {523,94}, {0,317}, {523,351},
+    {0,60}, {311,128}, {0,283}, {294,60}, {0,351}, {349,300},
+    {0,111}, {117,68}, {0,137}, {117,103}, {0,103}, {466,342},
+    {0,68}, {117,94}, {0,111}, {117,94}, {0,111}, {294,317},
+    {0,94}, {117,103}, {0,103}, {117,77}, {0,128}, {117,68},
+    {0,137}, {117,68}, {0,342}, {392,368}, {0,43}, {311,180},
+    {0,231}, {622,265}, {0,146}, {311,103}, {0,308}, {349,377},
+    {0,34}, {294,128}, {0,283}, {466,325}, {0,86}, {294,68},
+    {0,342}, {392,377}, {0,34}, {392,394}, {0,17}, {262,68},
+    {0,342}, {311,873}, {0,745}, {466,385}, {0,9}, {392,325},
+    {0,86}, {466,60}, {0,351}, {523,312}, {0,82}, {622,345},
+    {0,49}, {466,387}, {0,8}, {622,321}, {0,74}, {415,429},
+    {622,207}, {0,226}, {784,238}, {0,156}, {175,395}, {698,82},
+    {0,312}, {175,148}, {0,247}, {784,58}, {0,337}, {175,345},
+    {0,49}, {698,58}, {0,337}, {175,107}, {0,288}, {233,354},
+    {0,41}, {784,164}, {0,230}, {175,345}, {0,49}, {698,345},
+    {0,49}, {175,90}, {0,304}, {294,378}, {0,16}, {233,329},
+    {0,66}, {880,206}, {0,189}, {196,395}, {784,206}, {0,189},
+    {196,66}, {0,329}, {1175,90}, {0,304}, {1047,115}, {0,280},
+    {262,395}, {392,387}, {0,8}, {311,329}, {0,66}, {392,107},
+    {0,288}, {311,345}, {0,49}, {523,66}, {0,329}, {294,354},
+    {0,41}, {233,362}, {0,33}, {294,395}, {784,74}, {0,321},
+    {175,329}, {0,66}, {698,115}, {0,280}, {175,173}, {0,222},
+    {294,395}, {880,148}, {0,247}, {196,337}, {0,58}, {784,148},
+    {0,247}, {196,82}, {0,312}, {392,362}, {0,33}, {392,206},
+    {0,189}, {311,387}, {0,8}, {392,132}, {0,263}, {311,387},
+    {0,8}, {392,206}, {0,189}, {311,378}, {0,16}, {392,115},
+    {0,280}, {392,329}, {0,66}, {392,74}, {0,321}, {311,395},
+    {233,395}, {392,395}, {1175,148}, {0,247}, {1047,238}, {0,156},
+    {262,395}, {415,378}, {0,16}, {349,123}, {0,271}, {698,66},
+    {0,329}, {523,214}, {0,181}, {523,387}, {0,8}, {311,99},
+    {0,296}, {294,66}, {0,329}, {294,329}, {0,66}, {117,82},
+    {0,115}, {349,82}, {0,115}, {349,378}, {0,16}, {117,66},
+    {0,132}, {294,74}, {0,123}, {294,214}, {0,181}, {117,66},
+    {0,132}, {415,90}, {0,107}, {415,197}, {117,66}, {0,132},
+    {415,66}, {0,329}, {392,354}, {0,41}, {233,173}, {0,222},
+    {233,222}, {0,173}, {349,378}, {0,16}, {233,181}, {0,214},
+    {233,99}, {0,296}, {262,395}, {415,354}, {0,41}, {349,148},
+    {0,247}, {698,107}, {0,288}, {523,197}, {0,197}, {311,140},
+    {0,255}, {294,140}, {0,255}, {349,329}, {0,66}, {117,99},
+    {0,99}, {466,99}, {0,99}, {117,66}, {0,132}, {349,66},
+    {0,132}, {349,321}, {0,74}, {117,66}, {0,132}, {415,90},
+    {0,107}, {117,66}, {0,132}, {117,82}, {0,312}, {311,181},
+    {0,214}, {466,362}, {0,33}, {311,66}, {0,329}, {294,263},
+    {0,132}, {466,387}, {0,8}, {294,82}, {0,312}, {392,354},
+    {0,41}, {311,345}, {0,49}, {262,395}, {262,189}, {0,206},
+    {415,321}, {0,74}, {349,107}, {0,288}, {698,99}, {0,296},
+    {523,189}, {0,206}, {311,123}, {0,271}, {294,82}, {0,312},
+    {415,146}, {0,217}, {554,45}, {0,76}, {139,45}, {0,111},
+    {131,40}, {0,121}, {554,116}, {0,126}, {415,287}, {0,197},
+    {330,111}, {0,373}, {330,96}, {0,388}, {330,106}, {0,378},
+    {330,96}, {0,388}, {330,91}, {0,393}, {330,86}, {0,398},
+    {330,91}, {0,393}, {330,91}, {0,393}, {370,101}, {0,383},
+    {330,86}, {0,156}, {330,86}, {0,156}, {311,106}, {0,378},
+    {330,91}, {0,393}, {370,35}, {0,449}, {330,86}, {0,156},
+    {330,91}, {0,151}, {311,86}, {0,398}, {330,86}, {0,156},
+    {330,66}, {0,176}, {440,76}, {0,408}, {330,86}, {0,156},
+    {330,76}, {0,166}, {440,76}, {0,408}, {330,96}, {0,146},
+    {330,86}, {0,156}, {311,71}, {0,171}, {311,101}, {0,141},
+    {330,111}, {0,373}, {370,101}, {0,383}, {330,106}, {0,378},
+    {349,116}, {0,126}, {349,76}, {0,166}, {349,71}, {0,171},
+    {349,81}, {0,161}, {311,181}, {0,302}, {311,106}, {0,378},
+    {392,116}, {0,126}, {392,86}, {0,156}, {392,91}, {0,151},
+    {392,76}, {0,166}, {415,181}, {0,302}, {415,91}, {0,393},
+    {440,207}, {0,4148}, {220,86}, {0,156}, {220,186}, {0,55},
+    {233,207}, {0,35}, {220,131}, {0,111}, {196,136}, {0,106},
+    {175,111}, {0,131}, {165,86}, {0,2818}, {494,81}, {0,403},
+    {466,91}, {0,393}, {440,66}, {0,418}, {466,96}, {0,388},
+    {494,71}, {0,413}, {466,96}, {0,388}, {440,86}, {0,398},
+    {466,96}, {0,388}, {523,192}, {0,292}, {466,116}, {0,126},
+    {466,101}, {0,141}, {440,272}, {0,212}, {466,192}, {0,292},
+    {523,116}, {0,126}, {523,96}, {0,146}, {466,176}, {0,307},
+    {440,116}, {0,126}, {440,101}, {0,141}, {466,186}, {0,297},
+    {523,282}, {0,202}, {523,101}, {0,141}, {523,86}, {0,156},
+    {466,257}, {0,227}, {466,116}, {0,126}, {466,71}, {0,171},
+    {440,297}, {0,186}, {440,86}, {0,156}, {440,81}, {0,161},
+    {466,166}, {0,76}, {466,121}, {0,121}, {466,126}, {0,116},
+    {466,171}, {0,71}, {523,232}, {0,10}, {622,192}, {0,50},
+    {622,207}, {0,35}, {622,242}, {415,232}, {0,10}, {622,106},
+    {0,136}, {494,86}, {0,398}, {466,91}, {0,393}, {440,45},
+    {0,439}, {466,106}, {0,378}, {494,66}, {0,418}, {466,76},
+    {0,408}, {440,55}, {0,428}, {233,116}, {0,368}, {311,96},
+    {0,388}, {233,106}, {0,378}, {392,312}, {0,413}, {349,66},
+    {0,176}, {349,91}, {0,151}, {392,66}, {0,176}, {415,96},
+    {0,146}, {392,71}, {0,171}, {349,176}, {0,1275}, {233,106},
+    {0,378}, {311,60}, {0,423}, {233,106}, {0,136}, {349,50},
+    {0,192}, {349,96}, {0,146}, {392,71}, {0,171}, {415,81},
+    {0,161}, {392,81}, {0,161}, {349,101}, {0,1351}, {233,121},
+    {0,363}, {311,86}, {0,398}, {233,106}, {0,136}, {349,60},
+    {0,181}, {349,111}, {0,131}, {392,76}, {0,166}, {415,101},
+    {0,141}, {392,86}, {0,156}, {349,116}, {0,852}, {349,136},
+    {0,106}, {392,96}, {0,146}, {415,126}, {0,116}, {392,60},
+    {0,181}, {349,131}, {0,837}, {349,111}, {0,131}, {392,91},
+    {0,151}, {415,96}, {0,146}, {392,96}, {0,146}, {349,141},
+    {0,2762}, {370,171}, {0,312}, {440,131}, {0,353}, {440,141},
+    {0,343}, {494,126}, {0,358}, {466,151}, {0,333}, {466,166},
+    {0,318}, {466,166}, {0,2253}, {156,91}, {0,151}, {156,106},
+    {0,136}, {208,161}, {0,81}, {156,101}, {0,141}, {147,106},
+    {0,136}, {131,106}, {0,136}, {117,156}, {0,811}, {392,640},
+    {0,86}, {392,146}, {0,96}, {415,297}, {0,186}, {415,247},
+    {0,237}, {440,348}, {0,136}, {440,156}, {0,86}, {440,101},
+    {0,141}, {466,348}, {0,136}, {466,282}, {0,202}, {117,71},
+    {0,171}, {117,55}, {0,186}, {117,50}, {0,192}, {117,50},
+    {0,192}, {117,30}, {0,212}, {117,40}, {0,202}, {117,35},
+    {0,207}, {117,91}, {0,151}, {117,50}, {0,192}, {117,50},
+    {0,192}, {117,40}, {0,202}, {117,50}, {0,192}, {117,35},
+    {0,207}, {117,35}, {0,207}, {117,40}, {0,202}, {117,86},
+    {0,156}, {117,50}, {0,192}, {117,45}, {0,197}, {117,30},
+    {0,212}, {117,40}, {0,202}, {117,35}, {0,207}, {117,40},
+    {0,202}, {117,45}, {0,197}, {117,76}, {0,166}, {117,45},
+    {0,197}, {117,50}, {0,192}, {117,45}, {0,197}, {117,50},
+    {0,192}, {117,60}, {0,181}, {117,307}, {0,50360}, {117,75},
+    {0,96}, {131,75}, {0,96}, {117,71}, {0,99}, {131,82},
+    {0,89}, {147,57}, {0,114}, {156,50}, {0,121}, {147,67},
+    {0,103}, {156,71}, {0,99}, {175,78}, {0,92}, {196,71},
+    {0,99}, {208,75}, {0,96}, {196,78}, {0,92}, {208,75},
+    {0,96}, {233,64}, {0,107}, {262,53}, {0,117}, {233,53},
+    {0,117}, {294,60}, {0,110}, {233,53}, {0,117}, {349,170},
+    {0,259}, {233,357}, {0,71}, {392,384}, {0,45}, {233,304},
+    {0,125}, {466,393}, {0,36}, {233,152}, {0,277}, {349,411},
+    {0,18}, {233,161}, {0,268}, {466,330}, {0,98}, {233,89},
+    {0,339}, {392,375}, {0,54}, {262,205}, {0,223}, {523,214},
+    {0,214}, {262,89}, {0,339}, {392,491}, {0,366}, {392,348},
+    {0,509}, {392,268}, {0,375}, {415,107}, {0,107}, {392,330},
+    {0,527}, {466,348}, {0,509}, {466,277}, {0,580}, {587,357},
+    {0,71}, {294,45}, {0,384}, {880,429}, {440,54}, {0,375},
+    {466,420}, {0,9}, {294,125}, {0,304}, {587,250}, {0,179},
+    {294,62}, {0,366}, {415,411}, {0,18}, {262,420}, {0,9},
+    {415,384}, {0,45}, {311,62}, {0,366}, {466,393}, {0,36},
+    {622,429}, {311,80}, {0,348}, {392,420}, {0,9}, {392,402},
+    {0,27}, {262,71}, {0,357}, {294,402}, {0,27}, {392,321},
+    {0,107}, {196,205}, {0,223}, {392,429}, {392,62}, {0,366},
+    {294,366}, {0,62}, {233,366}, {0,62}, {294,62}, {0,312},
+    {392,366}, {0,27}, {311,429}, {392,98}, {0,250}, {311,607},
+    {0,1009}, {208,1598}, {0,116}, {392,420}, {0,9}, {392,420},
+    {0,9}, {466,330}, {0,98}, {587,357}, {0,71}, {587,205},
+    {0,223}, {392,411}, {0,18}, {466,80}, {0,348}, {523,420},
+    {0,9}, {587,375}, {0,54}, {523,339}, {0,89}, {587,98},
+    {0,286}, {466,223}, {0,134}, {466,429}, {523,411}, {0,18},
+    {466,420}, {0,9}, {523,134}, {0,259}, {330,411}, {0,18},
+    {392,107}, {0,321}, {415,196}, {0,232}, {415,223}, {0,205},
+    {392,250}, {0,179}, {330,429}, {233,98}, {0,277}, {698,429},
+    {0,71}, {87,65535},   /* la fuente trae 77205ms en esta ultima nota (F2, cola de silencio del conversor MIDI-to-Arduino) -- no entra en el uint16_t de PasoSonido_t.dur_ms (max 65535), se deja en el maximo representable en vez de truncarse silenciosamente a un valor incorrecto */
+};
+
+static const PasoSonido_t CANCION_STILLDRE[] = {   /* Dr Dre - Still Dre.ino -- transcrita de prueba_de_sonido/sonidos/Dr Dre - Still Dre.ino */
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {784,313},
+    {784,313}, {784,313}, {784,313}, {784,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {784,313}, {784,313}, {784,313},
+    {784,313}, {784,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {784,313}, {784,313}, {784,313}, {784,313}, {784,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {784,313},
+    {784,313}, {784,313}, {784,313}, {784,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {784,313}, {784,313}, {784,313},
+    {784,313}, {784,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {784,313}, {784,313}, {784,313}, {784,313}, {784,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {784,313},
+    {784,313}, {784,313}, {784,313}, {784,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {784,313}, {784,313}, {784,313},
+    {784,313}, {784,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {784,313}, {784,313}, {784,313}, {784,313}, {784,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {784,313},
+    {784,313}, {784,313}, {784,313}, {784,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {784,313}, {784,313}, {784,313},
+    {784,313}, {784,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {784,313}, {784,313}, {784,313}, {784,313}, {784,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {784,313},
+    {784,313}, {784,313}, {784,313}, {784,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {784,313}, {784,313}, {784,313},
+    {784,313}, {784,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {784,313}, {784,313}, {784,313}, {784,313}, {784,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {784,313},
+    {784,313}, {784,313}, {784,313}, {784,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {784,313}, {784,313}, {784,313},
+    {784,313}, {784,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {880,313}, {880,313}, {880,313}, {880,313}, {880,313},
+    {880,313}, {784,313}, {784,313}, {784,313}, {784,313}, {784,2500},
+};
+
+static const PasoSonido_t CANCION_NARUTO[] = {   /* Naruto Shippuden - Naruto Shpippuuden Opening 9.ino -- transcrita de prueba_de_sonido/sonidos/Naruto Shippuden - Naruto Shpippuuden Opening 9.ino */
+    {440,188}, {0,375}, {415,188}, {0,375}, {392,188}, {0,188},
+    {311,563}, {311,563}, {988,94}, {988,94}, {740,94}, {740,94},
+    {831,563}, {831,188}, {740,188}, {740,188}, {740,188}, {622,375},
+    {740,938}, {988,94}, {988,94}, {740,94}, {740,94}, {831,563},
+    {831,188}, {740,188}, {831,188}, {740,188}, {622,188}, {494,188},
+    {0,188}, {466,188}, {0,188}, {370,188}, {0,188}, {988,94},
+    {988,94}, {740,94}, {740,94}, {831,375}, {831,188}, {831,188},
+    {932,375}, {932,188}, {784,188}, {1109,188}, {988,188}, {932,188},
+    {988,188}, {370,188}, {415,188}, {622,188}, {1109,1500}, {932,375},
+    {1480,94}, {1109,94}, {932,94}, {740,94}, {1109,94}, {932,94},
+    {740,94}, {554,94}, {932,94}, {740,94}, {554,94}, {466,94},
+    {740,375}, {494,375}, {466,188}, {466,188}, {494,188}, {740,375},
+    {988,188}, {988,188}, {988,188}, {932,188}, {988,188}, {932,188},
+    {988,188}, {494,188}, {415,188}, {415,188}, {622,188}, {554,375},
+    {494,375}, {494,188}, {466,188}, {494,188}, {466,188}, {370,938},
+    {415,188}, {415,188}, {622,188}, {554,375}, {494,375}, {494,188},
+    {587,188}, {554,188}, {494,188}, {622,375}, {740,375}, {0,563},
+    {415,188}, {415,188}, {415,375}, {415,188}, {494,375}, {466,188},
+    {415,188}, {415,375}, {415,188}, {415,188}, {466,188}, {494,375},
+    {466,375}, {415,188}, {370,375}, {415,375}, {0,1688}, {415,375},
+    {415,375}, {370,188}, {415,375}, {370,188}, {415,563}, {311,188},
+    {277,188}, {247,188}, {554,563}, {659,563}, {1109,375}, {370,188},
+    {277,188}, {370,188}, {466,188}, {1109,188}, {932,188}, {740,188},
+    {622,188}, {208,188}, {208,188}, {415,375}, {415,375}, {415,188},
+    {494,375}, {466,188}, {415,188}, {494,750}, {0,188}, {208,188},
+    {208,188}, {415,188}, {415,188}, {415,375}, {415,324}, {466,51},
+    {494,375}, {466,188}, {415,750}, {0,188}, {208,188}, {208,188},
+    {415,375}, {415,188}, {415,375}, {370,188}, {415,375}, {370,188},
+    {415,375}, {622,188}, {554,188}, {494,188}, {554,563}, {659,563},
+    {554,375}, {370,563}, {740,563}, {370,563}, {0,938}, {415,188},
+    {415,188}, {370,188}, {370,375}, {311,375}, {277,375}, {247,375},
+    {277,188}, {311,375}, {0,375}, {415,188}, {415,188}, {370,188},
+    {370,375}, {370,375}, {311,188}, {370,188}, {494,188}, {415,750},
+    {0,375}, {415,188}, {415,188}, {392,188}, {392,375}, {415,375},
+    {311,188}, {277,188}, {247,375}, {277,188}, {311,188}, {311,188},
+    {330,563}, {330,375}, {311,188}, {277,188}, {247,188}, {247,563},
+    {659,375}, {208,188}, {208,188}, {311,188}, {277,281}, {0,281},
+    {277,281}, {0,281}, {277,188}, {0,188}, {311,563}, {311,563},
+    {988,94}, {988,94}, {740,94}, {740,94}, {831,563}, {831,188},
+    {740,188}, {740,188}, {740,188}, {622,375}, {740,938}, {988,94},
+    {988,94}, {740,94}, {740,94}, {831,563}, {831,188}, {740,188},
+    {831,188}, {740,188}, {622,938}, {494,188}, {622,188}, {988,94},
+    {988,94}, {740,94}, {740,94}, {831,375}, {831,188}, {831,188},
+    {932,375}, {932,188}, {784,188}, {1109,188}, {988,188}, {932,188},
+    {988,188}, {831,188}, {831,188}, {1245,188}, {1109,1500}, {932,750},
+    {932,188}, {0,188}, {1109,188}, {0,188}, {740,375}, {494,188},
+    {494,188}, {466,188}, {494,375}, {740,94}, {0,281}, {494,188},
+    {494,188}, {494,188}, {466,188}, {494,188}, {466,188}, {494,188},
+    {415,188}, {415,188}, {622,188}, {554,375}, {494,375}, {494,188},
+    {466,188}, {494,188}, {466,188}, {370,938}, {415,188}, {415,188},
+    {622,188}, {554,375}, {494,375}, {494,188}, {587,188}, {554,188},
+    {494,188}, {622,375}, {392,188}, {740,188}, {392,188}, {740,375},
+    {494,188}, {494,188}, {466,188}, {494,375}, {740,375}, {494,188},
+    {494,188}, {494,188}, {466,188}, {494,188}, {466,188}, {494,188},
+    {415,188}, {415,188}, {622,188}, {554,375}, {494,375}, {494,188},
+    {587,188}, {554,188}, {494,188}, {622,375}, {740,563}, {415,1500},
+    {622,750}, {415,375}, {494,375}, {622,375}, {831,375}, {988,375},
+    {831,375}, {932,375}, {740,1500}, {554,375}, {494,375}, {466,375},
+    {370,375}, {311,563}, {208,5763},
+};
+
+static const PasoSonido_t CANCION_ONEPIECE[] = {   /* One Piece - Bink's Sake.ino -- transcrita de prueba_de_sonido/sonidos/One Piece - Bink's Sake.ino */
+    {233,156}, {0,10}, {262,150}, {0,10}, {294,168}, {294,119},
+    {0,8}, {233,502}, {0,2}, {466,156}, {0,10}, {523,150},
+    {0,10}, {587,168}, {587,495}, {698,494}, {0,2}, {932,512},
+    {1865,989}, {0,2002}, {466,162}, {466,167}, {523,372}, {466,121},
+    {0,10}, {466,495}, {233,1000}, {0,2}, {466,162}, {466,167},
+    {523,372}, {466,121}, {0,10}, {233,512}, {233,495}, {233,500},
+    {0,1}, {233,510}, {0,3}, {466,162}, {466,167}, {523,367},
+    {466,126}, {0,2}, {466,495}, {233,495}, {165,494}, {0,2},
+    {466,162}, {466,167}, {523,367}, {466,119}, {0,10}, {156,512},
+    {233,495}, {233,1000}, {0,2}, {392,119}, {0,8}, {349,367},
+    {311,120}, {0,8}, {294,119}, {0,8}, {208,502}, {0,2},
+    {392,119}, {0,8}, {311,120}, {0,8}, {311,118}, {0,8},
+    {196,494}, {0,2}, {311,119}, {0,8}, {196,495}, {294,118},
+    {0,8}, {415,119}, {0,10}, {392,119}, {0,8}, {311,120},
+    {0,8}, {117,495}, {175,494}, {0,2}, {392,119}, {0,8},
+    {349,367}, {311,120}, {0,8}, {294,119}, {0,8}, {208,502},
+    {0,2}, {392,119}, {0,8}, {311,120}, {0,8}, {311,118},
+    {0,8}, {196,494}, {0,2}, {311,119}, {0,8}, {196,495},
+    {294,118}, {0,8}, {415,119}, {0,10}, {311,119}, {0,8},
+    {349,120}, {0,8}, {156,498}, {233,502}, {0,2}, {784,119},
+    {0,8}, {698,367}, {622,120}, {0,8}, {587,119}, {0,8},
+    {208,502}, {0,2}, {784,119}, {0,8}, {622,120}, {0,8},
+    {622,118}, {0,8}, {196,494}, {0,2}, {622,119}, {0,8},
+    {196,495}, {587,118}, {0,8}, {831,119}, {0,10}, {784,119},
+    {0,8}, {622,120}, {0,8}, {117,495}, {175,494}, {0,2},
+    {784,119}, {0,8}, {698,367}, {622,120}, {0,8}, {587,119},
+    {0,8}, {208,502}, {0,2}, {784,119}, {0,8}, {622,120},
+    {0,8}, {622,118}, {0,8}, {196,494}, {0,2}, {622,119},
+    {0,8}, {196,495}, {587,118}, {0,8}, {831,119}, {0,10},
+    {622,119}, {0,8}, {698,120}, {0,8}, {156,498}, {233,502},
+    {0,2}, {466,162}, {466,167}, {523,372}, {466,129}, {0,2},
+    {466,495}, {233,1000}, {0,2}, {466,162}, {466,167}, {523,372},
+    {466,121}, {0,10}, {233,512}, {233,495}, {233,500}, {0,1},
+    {233,510}, {0,3}, {466,162}, {466,167}, {523,367}, {466,126},
+    {0,2}, {466,495}, {131,495}, {165,494}, {0,2}, {466,162},
+    {466,167}, {523,367}, {466,119}, {0,10}, {156,512}, {233,495},
+    {1245,495},
+};
+
+static const PasoSonido_t CANCION_PIRATES[] = {   /* Pirates Of The Caribbean - Davy Jones.ino -- transcrita de prueba_de_sonido/sonidos/Pirates Of The Caribbean - Davy Jones.ino */
+    {147,1492}, {0,8}, {165,742}, {0,8}, {147,1492}, {0,8},
+    {165,742}, {0,8}, {147,1492}, {0,8}, {392,742}, {0,8},
+    {349,1492}, {0,758}, {349,1492}, {0,8}, {392,742}, {0,8},
+    {466,367}, {0,8}, {392,367}, {0,8}, {349,1492}, {0,8},
+    {330,742}, {0,8}, {294,1680}, {0,570}, {392,1492}, {0,8},
+    {440,742}, {0,8}, {349,1492}, {0,8}, {294,742}, {0,8},
+    {330,1492}, {0,8}, {196,742}, {0,8}, {147,1492}, {0,758},
+    {131,742}, {0,8}, {110,1492}, {0,758}, {294,1492}, {0,758},
+    {349,1492},
+};
+
+static const PasoSonido_t CANCION_TOKYOGHOUL[] = {   /* Tokyo Ghoul - Unravel.ino -- transcrita de prueba_de_sonido/sonidos/Tokyo Ghoul - Unravel.ino */
+    {932,416}, {0,1}, {1047,416}, {0,1}, {932,416}, {0,1},
+    {932,207}, {0,1}, {784,207}, {0,209}, {1047,416}, {0,1},
+    {932,416}, {0,1}, {880,416}, {0,1}, {784,416}, {0,1},
+    {784,207}, {0,1}, {698,207}, {0,418}, {698,207}, {0,1},
+    {622,416}, {0,1}, {698,207}, {0,1}, {587,1041}, {0,626},
+    {587,207}, {0,1}, {587,416}, {0,1}, {587,207}, {0,1},
+    {587,416}, {0,1}, {1047,207}, {0,1}, {1047,416}, {0,1459},
+    {932,207}, {0,1}, {880,416}, {0,1}, {880,207}, {0,1},
+    {880,416}, {0,1}, {932,416}, {0,1}, {932,416}, {0,1251},
+    {932,207}, {0,1}, {1047,416}, {0,1}, {932,416}, {0,1},
+    {880,207}, {0,1}, {784,207}, {0,209}, {1047,416}, {0,1},
+    {932,416}, {0,1}, {880,416}, {0,1}, {784,416}, {0,1},
+    {784,207}, {0,1}, {698,416}, {0,209}, {698,207}, {0,1},
+    {622,416}, {0,1}, {698,207}, {0,1}, {587,832}, {0,834},
+    {587,207}, {0,1}, {587,416}, {0,1}, {587,207}, {0,1},
+    {587,416}, {0,1}, {1047,207}, {0,1}, {1047,416}, {0,1459},
+    {932,207}, {0,1}, {880,416}, {0,1}, {880,207}, {0,1},
+    {880,416}, {0,1}, {932,416}, {0,1}, {932,207}, {0,1},
+    {587,103}, {0,1}, {587,103}, {0,105}, {587,103}, {0,105},
+    {587,103}, {0,1}, {587,103}, {0,105}, {587,103}, {0,1},
+    {587,103}, {0,105}, {587,103}, {0,105}, {587,103}, {0,1},
+    {587,103}, {0,105}, {587,103}, {0,1}, {392,103}, {0,1},
+    {392,103}, {0,1}, {440,103}, {0,1}, {392,103}, {0,1},
+    {392,103}, {0,1}, {466,103}, {0,1}, {440,103}, {0,1},
+    {587,103}, {0,1}, {392,103}, {0,1}, {392,103}, {0,1},
+    {440,103}, {0,1}, {392,103}, {0,1}, {392,103}, {0,1},
+    {440,103}, {0,1}, {392,103}, {0,1}, {587,103}, {0,1},
+    {587,103}, {0,105}, {587,103}, {0,105}, {587,103}, {0,1},
+    {587,103}, {0,105}, {587,103}, {0,1}, {587,103}, {0,105},
+    {587,103}, {0,105}, {587,103}, {0,1}, {587,103}, {0,105},
+    {587,103}, {0,1}, {932,103}, {0,105}, {587,103}, {0,1},
+    {784,207}, {0,1}, {466,103}, {0,1}, {466,103}, {0,1},
+    {523,103}, {0,1}, {466,103}, {0,1}, {784,103}, {0,1},
+    {466,103}, {0,1}, {466,103}, {0,1}, {698,103}, {0,1},
+    {466,207}, {0,1}, {466,103}, {0,1}, {932,103}, {0,105},
+    {587,103}, {0,1}, {784,207}, {0,1}, {466,103}, {0,1},
+    {466,103}, {0,1}, {523,103}, {0,1}, {466,103}, {0,1},
+    {784,103}, {0,1}, {466,103}, {0,1}, {466,103}, {0,1},
+    {784,103}, {0,1}, {466,207}, {0,1}, {466,103}, {0,1},
+    {932,103}, {0,105}, {587,103}, {0,1}, {784,207}, {0,1},
+    {466,103}, {0,1}, {466,103}, {0,1}, {523,103}, {0,1},
+    {466,103}, {0,1}, {784,103}, {0,1}, {466,103}, {0,1},
+    {466,103}, {0,1}, {784,103}, {0,1}, {466,207}, {0,1},
+    {466,103}, {0,1}, {932,103}, {0,105}, {587,103}, {0,1},
+    {784,207}, {0,1}, {466,103}, {0,1}, {466,103}, {0,1},
+    {523,103}, {0,1}, {466,103}, {0,1}, {784,103}, {0,1},
+    {466,103}, {0,1}, {466,103}, {0,1}, {784,103}, {0,1},
+    {466,207}, {0,1}, {698,103}, {0,1}, {784,103}, {0,105},
+    {622,103}, {0,209}, {880,103}, {0,105}, {698,103}, {0,1},
+    {784,103}, {0,105}, {622,103}, {0,209}, {880,207}, {0,1},
+    {932,312}, {0,1}, {932,312}, {0,1}, {932,207}, {0,418},
+    {932,207}, {0,1}, {1175,207}, {0,1}, {1175,312}, {0,1},
+    {1047,312}, {0,1}, {1047,207}, {0,626}, {932,207}, {0,1},
+    {1047,312}, {0,1}, {932,312}, {0,1}, {880,416}, {0,1},
+    {698,416}, {0,1}, {587,207}, {0,1459}, {880,207}, {0,1},
+    {932,207}, {0,1}, {932,103}, {0,1}, {932,416}, {0,313},
+    {932,207}, {0,209}, {1175,207}, {0,1}, {1175,312}, {0,1},
+    {1047,312}, {0,1}, {1047,416}, {0,1}, {932,207}, {0,418},
+    {1175,416}, {0,1}, {1047,207}, {0,1}, {1047,624}, {0,1},
+    {880,207}, {0,1}, {932,207}, {0,1459}, {1397,207}, {0,1},
+    {1397,207}, {0,1}, {1175,103}, {0,1}, {1175,103}, {0,209},
+    {1175,207}, {0,1}, {1047,207}, {0,1}, {1175,103}, {0,1},
+    {1175,103}, {0,209}, {1397,207}, {0,1}, {1397,207}, {0,1},
+    {1175,103}, {0,1}, {1175,103}, {0,209}, {1175,207}, {0,1},
+    {1047,207}, {0,1}, {1175,103}, {0,1}, {1175,103}, {0,209},
+    {1397,207}, {0,1}, {1397,207}, {0,1}, {1175,103}, {0,1},
+    {1175,103}, {0,209}, {1175,207}, {0,1}, {1047,312}, {0,1},
+    {1047,312}, {0,1}, {1047,207}, {0,1}, {1175,624}, {0,1},
+    {1175,207}, {0,1}, {1175,312}, {0,1}, {1047,312}, {0,1},
+    {1047,207}, {0,1}, {1175,312}, {0,1}, {1047,312}, {0,1},
+    {1047,207}, {0,1}, {1047,312}, {0,1}, {932,312}, {0,1},
+    {932,207}, {0,1}, {880,312}, {0,1}, {932,312}, {0,1},
+    {880,416}, {0,1}, {698,416}, {0,1}, {698,207}, {0,1},
+    {1175,312}, {0,1}, {1047,312}, {0,1}, {1047,207}, {0,1},
+    {1047,312}, {0,1}, {932,312}, {0,1}, {932,207}, {0,1},
+    {880,312}, {0,1}, {932,312}, {0,1}, {1397,416}, {0,1},
+    {880,416}, {0,1}, {880,207}, {0,1}, {1568,312}, {0,1},
+    {1397,312}, {0,1}, {1397,207}, {0,1}, {1397,312}, {0,1},
+    {1175,312}, {0,1}, {932,207}, {0,1}, {932,312}, {0,1},
+    {880,312}, {0,1}, {784,416}, {0,1}, {880,416}, {0,1},
+    {932,832}, {0,834}, {932,207}, {0,1}, {880,312}, {0,1},
+    {932,312}, {0,1}, {880,416}, {0,1}, {698,416}, {0,209},
+    {1175,312}, {0,1}, {1047,312}, {0,1}, {1047,207}, {0,1},
+    {1047,312}, {0,1}, {932,312}, {0,1}, {932,207}, {0,1},
+    {880,312}, {0,1}, {932,312}, {0,1}, {880,416}, {0,1},
+    {698,416}, {0,1}, {698,207}, {0,1}, {1175,312}, {0,1},
+    {1047,312}, {0,1}, {1047,207}, {0,1}, {1047,312}, {0,1},
+    {932,312}, {0,1}, {932,207}, {0,1}, {880,312}, {0,1},
+    {932,312}, {0,1}, {1397,416}, {0,1}, {880,416}, {0,1},
+    {880,207}, {0,1}, {1568,312}, {0,1}, {1397,312}, {0,1},
+    {1397,207}, {0,1}, {1397,312}, {0,1}, {1175,312}, {0,1},
+    {932,207}, {0,1}, {932,312}, {0,1}, {880,312}, {0,1},
+    {784,416}, {0,1}, {880,416}, {0,1}, {932,1874},
+};
+
+typedef enum { CANCION_BIENVENIDA_IDX = 0, CANCION_ESTRELLITA_IDX, CANCION_HIMNO_IDX,   // indices del repertorio completo de canciones -- el orden debe coincidir con CANCIONES_DATA/LEN mas abajo y con RLC_NOMBRE en renderer.c
+               CANCION_MARTINILLO_IDX, CANCION_NAVIDAD_IDX, CANCION_TETRIS_IDX,   // repertorio original (temas de dominio publico)
+               CANCION_BOHEMIAN_IDX, CANCION_STILLDRE_IDX, CANCION_NARUTO_IDX,   // temas provistos por el profesor (ver prueba_de_sonido/sonidos/*.ino)
+               CANCION_ONEPIECE_IDX, CANCION_PIRATES_IDX, CANCION_TOKYOGHOUL_IDX,   // resto de los temas del profesor
+               CANCIONES_N } CancionIdx_t;   // CANCIONES_N = cantidad total, calculada sola por el compilador (siempre el ultimo valor del enum) -- agregar una cancion nueva no requiere actualizar este numero a mano
 
 /* Los nombres para mostrar en pantalla viven en renderer.c (RLC_NOMBRE) --
  * el ORDEN debe coincidir exactamente con este arreglo. */
-static const PasoSonido_t *const CANCIONES_DATA[CANCIONES_N] = {
-    BEEP_BIENVENIDA, CANCION_ESTRELLITA, CANCION_HIMNO, CANCION_MARTINILLO, CANCION_NAVIDAD, CANCION_TETRIS
+static const PasoSonido_t *const CANCIONES_DATA[CANCIONES_N] = {   // tabla de punteros a cada arreglo de notas, indexada por CancionIdx_t -- agregar una cancion nueva implica sumarla aca EN EL MISMO ORDEN que el enum
+    BEEP_BIENVENIDA, CANCION_ESTRELLITA, CANCION_HIMNO, CANCION_MARTINILLO, CANCION_NAVIDAD, CANCION_TETRIS,   // repertorio original
+    CANCION_BOHEMIAN, CANCION_STILLDRE, CANCION_NARUTO, CANCION_ONEPIECE, CANCION_PIRATES, CANCION_TOKYOGHOUL   // temas del profesor
 };
-static const uint16_t CANCIONES_LEN[CANCIONES_N] = {
-    BEEP_BIENVENIDA_N,
-    (uint16_t)(sizeof(CANCION_ESTRELLITA)  / sizeof(CANCION_ESTRELLITA[0])),
+static const uint16_t CANCIONES_LEN[CANCIONES_N] = {   // cantidad de pasos de cada cancion, calculada automaticamente con sizeof -- no hay que contar notas a mano ni actualizar esto si una cancion cambia de largo
+    BEEP_BIENVENIDA_N,   // el jingle ya tiene su propia macro N, calculada mas arriba junto al arreglo
+    (uint16_t)(sizeof(CANCION_ESTRELLITA)  / sizeof(CANCION_ESTRELLITA[0])),   // bytes totales del arreglo / bytes de 1 elemento = cantidad de elementos
     (uint16_t)(sizeof(CANCION_HIMNO)       / sizeof(CANCION_HIMNO[0])),
     (uint16_t)(sizeof(CANCION_MARTINILLO)  / sizeof(CANCION_MARTINILLO[0])),
     (uint16_t)(sizeof(CANCION_NAVIDAD)     / sizeof(CANCION_NAVIDAD[0])),
     (uint16_t)(sizeof(CANCION_TETRIS)      / sizeof(CANCION_TETRIS[0])),
+    (uint16_t)(sizeof(CANCION_BOHEMIAN)    / sizeof(CANCION_BOHEMIAN[0])),
+    (uint16_t)(sizeof(CANCION_STILLDRE)    / sizeof(CANCION_STILLDRE[0])),
+    (uint16_t)(sizeof(CANCION_NARUTO)      / sizeof(CANCION_NARUTO[0])),
+    (uint16_t)(sizeof(CANCION_ONEPIECE)    / sizeof(CANCION_ONEPIECE[0])),
+    (uint16_t)(sizeof(CANCION_PIRATES)     / sizeof(CANCION_PIRATES[0])),
+    (uint16_t)(sizeof(CANCION_TOKYOGHOUL)  / sizeof(CANCION_TOKYOGHOUL[0])),
 };
 
 static uint8_t  buzzer_fondo_idx  = CANCION_TETRIS_IDX;   // indice (CancionIdx_t) de la cancion de fondo sonando ahora mismo -- se usa solo para elegir la siguiente al rotar el repertorio, ver Buzzer_Fondo_RotarSiTermino
@@ -635,19 +1076,19 @@ static uint32_t buzzer_repertorio_seed = 2463534242u;      // semilla propia del
 
 /* Arranca la musica de fondo con la cancion `cancion_idx` (loop continuo,
  * ver Buzzer_Actualizar para como convive con los SFX en primer plano). */
-static void Buzzer_Fondo_Iniciar(uint8_t cancion_idx) {
-    buzzer_fondo_idx       = cancion_idx;
-    buzzer_fondo_pasos     = CANCIONES_DATA[cancion_idx];
-    buzzer_fondo_pasos_n   = CANCIONES_LEN[cancion_idx];
-    buzzer_fondo_pos       = 0;
-    buzzer_fondo_tick_paso = HAL_GetTick();
-    buzzer_fondo_activo    = 1;
-    if (buzzer_pos >= buzzer_pasos_n) Buzzer_SetSalida(buzzer_fondo_pasos[0].freq_hz);
+static void Buzzer_Fondo_Iniciar(uint8_t cancion_idx) {   // arranca la musica de fondo en loop con la cancion `cancion_idx` del repertorio (ver CANCIONES_DATA)
+    buzzer_fondo_idx       = cancion_idx;   // recuerda que cancion es la actual, para que Buzzer_Fondo_RotarSiTermino sepa cual NO repetir
+    buzzer_fondo_pasos     = CANCIONES_DATA[cancion_idx];   // apunta al arreglo de notas de la cancion elegida
+    buzzer_fondo_pasos_n   = CANCIONES_LEN[cancion_idx];   // cuantos pasos tiene esa cancion
+    buzzer_fondo_pos       = 0;   // arranca desde el primer paso
+    buzzer_fondo_tick_paso = HAL_GetTick();   // marca el instante de arranque de ese primer paso
+    buzzer_fondo_activo    = 1;   // habilita a Buzzer_Actualizar a avanzarla en cada tick
+    if (buzzer_pos >= buzzer_pasos_n) Buzzer_SetSalida(buzzer_fondo_pasos[0].freq_hz);   // si no hay un SFX en curso, suena YA la primera nota (si hay un SFX sonando, Buzzer_Actualizar la retomara sola al terminar)
 }
 
-static void Buzzer_Fondo_Detener(void) {
-    buzzer_fondo_activo = 0;
-    if (buzzer_pos >= buzzer_pasos_n) Buzzer_SetSalida(0);
+static void Buzzer_Fondo_Detener(void) {   // corta la musica de fondo y silencia el buzzer si no hay un SFX corto sonando encima
+    buzzer_fondo_activo = 0;   // apaga la bandera -- Buzzer_Actualizar deja de avanzarla
+    if (buzzer_pos >= buzzer_pasos_n) Buzzer_SetSalida(0);   // si no hay un SFX en curso que la tape, silencia el buzzer ya mismo
 }
 
 /* Rota el repertorio de musica de fondo: elige al azar una cancion distinta
@@ -659,21 +1100,21 @@ static void Buzzer_Fondo_Detener(void) {
  * completa su vuelta) sin tocar ningun punto de arranque de partida --
  * TODAS las partidas siguen empezando en CANCION_TETRIS_IDX como hasta
  * ahora, y a partir de ahi el repertorio se mezcla solo. */
-static void Buzzer_Fondo_RotarSiTermino(void) {
+static void Buzzer_Fondo_RotarSiTermino(void) {   // ver comentario de arriba: cambia de cancion sola cuando la actual completa una vuelta
     buzzer_repertorio_seed = buzzer_repertorio_seed * 1103515245u + 12345u;   // mismo LCG que el resto del proyecto, semilla propia
     uint8_t nuevo = (uint8_t)(1u + ((buzzer_repertorio_seed >> 16) % (CANCIONES_N - 1)));   // 1..CANCIONES_N-1: salta el indice 0 (jingle de bienvenida)
     if (nuevo == buzzer_fondo_idx) nuevo = (uint8_t)(1u + (nuevo % (CANCIONES_N - 1)));   // evita repetir la misma cancion 2 veces seguidas
-    buzzer_fondo_idx      = nuevo;
-    buzzer_fondo_pasos    = CANCIONES_DATA[nuevo];
-    buzzer_fondo_pasos_n  = CANCIONES_LEN[nuevo];
-    buzzer_fondo_pos      = 0;
+    buzzer_fondo_idx      = nuevo;   // recuerda la nueva cancion actual
+    buzzer_fondo_pasos    = CANCIONES_DATA[nuevo];   // apunta al arreglo de notas de la cancion nueva
+    buzzer_fondo_pasos_n  = CANCIONES_LEN[nuevo];   // cuantos pasos tiene
+    buzzer_fondo_pos      = 0;   // arranca desde el primer paso de la cancion nueva
 }
 
 /* ========================================================================== */
 /* === RECORRIDO DE PANTALLAS DE DISEÑO ====================================== */
 /* ========================================================================== */
 
-typedef enum {
+typedef enum {   // cada valor es una pantalla del recorrido -- agregar una pantalla nueva implica sumarla aca Y en DEMO_NOMBRE (mismo orden) mas abajo
     DEMO_SPLASH = 0,
     DEMO_JUGADORES_1,       /* seleccion de jugadores, cursor en "1 JUGADOR"   */
     DEMO_JUGADORES_2,       /* seleccion de jugadores, cursor en "2 JUGADORES" */
@@ -689,27 +1130,34 @@ typedef enum {
     DEMO_CONTEO_GO,         // ultimo paso del conteo ("GO"), justo antes de arrancar el modo elegido
     DEMO_JUGANDO,           /* modo Guitar Hero (ya construido)                */
     DEMO_RESULTADO,         // pantalla de resultado/game over del recorrido de diseño (no la real de cada modo, ver *_DibujarGameOver)
+    DEMO_MENU_DIFICULTAD,   /* seleccion de dificultad (FACIL/MEDIO/PRO), SOLO para Guitar Hero, justo despues de confirmar el modo */
     DEMO_MENU_CANCIONES,    /* lista de canciones tipo "reproductor"           */
     DEMO_COUNT              // cantidad total de pantallas -- SIEMPRE debe quedar ultima en el enum, se usa para dimensionar DEMO_NOMBRE[]
-} DemoScreen_t;
+} DemoScreen_t;   // tipo del estado de pantalla actual, usado por la variable `screen` del bucle principal en main()
 
 /* Nombres para el log por consola (ver MX_USART2_UART_Init) -- el orden
  * debe coincidir exactamente con DemoScreen_t. */
 static const char *const DEMO_NOMBRE[DEMO_COUNT] = {   // nombres de texto de cada pantalla, en el MISMO orden que DemoScreen_t -- usados solo para el log "[SCREEN] -> %s" por consola
     "SPLASH", "JUGADORES_1", "JUGADORES_2", "INICIALES", "MODO_SIMON", "MODO_SIMONJOY",
-    "MODO_GUITAR", "PREVIEW_SIMON", "PREVIEW_SIMONJOY", "CONTEO_3", "CONTEO_2",
-    "CONTEO_1", "CONTEO_GO", "JUGANDO", "RESULTADO", "MENU_CANCIONES"
+    "MODO_GUITAR", "PREVIEW_SIMON", "PREVIEW_SIMONJOY", "CONTEO_3", "CONTEO_2",   // continua la lista de nombres, mismo orden que el enum de arriba
+    "CONTEO_1", "CONTEO_GO", "JUGANDO", "RESULTADO", "MENU_DIFICULTAD", "MENU_CANCIONES"   // ultimos nombres de la lista
 };
 
 /* Indice seleccionado en DEMO_MENU_CANCIONES (persiste entre visitas) */
 static uint8_t cancion_cursor = CANCION_TETRIS_IDX;   // cancion actualmente resaltada en la lista; se almacena aca (y no en gs) para que el valor se conserve al entrar y salir del menu -- arranca en Tetris (la cancion de fondo historica) para que la primera visita a la lista no empiece resaltando el jingle de bienvenida
+
+/* Indice seleccionado en DEMO_MENU_DIFICULTAD (0=FACIL, 1=MEDIO, 2=PRO) --
+ * persiste entre visitas igual que cancion_cursor. Solo se usa para Guitar
+ * Hero (ver GuitarHero_IniciarSolo/GuitarHero2_IniciarAmbos); arranca en
+ * MEDIO para no forzar al primer jugador a decidir entre 2 extremos. */
+static uint8_t dificultad_cursor = 1;   // 0=FACIL 1=MEDIO 2=PRO -- cambiar el valor inicial aca cambia con que dificultad arranca la PRIMERA vez que se abre el menu (despues, el cursor recuerda la ultima eleccion)
 
 /* Iniciales de 3 letras por jugador: se solicitan en la pantalla
  * DEMO_INICIALES, entre la seleccion de cantidad de jugadores y la
  * seleccion de modo de juego. Se muestran en lugar de las etiquetas
  * genericas "J1"/"J2" en cada modo (ver Nombre_Jugador(), utilizada desde
  * renderer.c). */
-static char    nombre_jugadores[2][4] = { "AAA", "AAA" };
+static char    nombre_jugadores[2][4] = { "AAA", "AAA" };   // nombre de 3 letras + terminador '\0' de cada jugador; "AAA" es el valor por defecto antes de escribir el nombre real
 static uint8_t nombre_jugador_actual  = 0;   /* 0 o 1 -- jugador que esta escribiendo su nombre actualmente */
 static uint8_t nombre_pos_actual      = 0;   /* 0,1,2 -- posicion de la letra que se esta editando */
 
@@ -812,9 +1260,9 @@ static void Demo_Enter(uint8_t screen) {   // punto unico de entrada a cualquier
     case DEMO_JUGANDO:
         /* El puntaje y el combo inician en 0 porque esta pantalla permite
          * jugar de verdad presionando B1 (ver GuitarHero_IntentarGolpe). */
-        gs.estado       = ESTADO_JUGANDO;   // marca el estado de ejemplo como "jugando" (lo consulta el renderer de Guitar Hero)
-        gs.nota_speed   = NOTE_SPEED_L2;   // velocidad de caida de las notas del recorrido de diseño de Guitar Hero; cambiar esta constante (en game_state.h) cambia que tan rapido caen
-        gs.j[0].puntaje = 0;   // puntaje inicial de jugador 0 en este recorrido de prueba
+        gs.estado       = ESTADO_JUGANDO;   // marca el estado de ejemplo como "jugando" (lo consulta el renderer de Guitar Hero) -- cambiar esto a otro ESTADO_* haria que el renderer de fondo dibuje otra pantalla
+        gs.nota_speed   = NOTE_SPEED_L2;   // velocidad de caida de las notas del recorrido de diseño de Guitar Hero; cambiar esta constante (en game_state.h) cambia que tan rapido caen -- NO es la misma variable que usa el Guitar Hero real (ver gh_speed_base mas abajo)
+        gs.j[0].puntaje = 0;   // puntaje inicial de jugador 0 en este recorrido de prueba -- cambiar este numero solo afecta el arranque de este recorrido de adorno, no el juego real
         gs.j[0].combo   = 0;   // combo inicial de jugador 0
         gs.j[1].puntaje = 0;   // puntaje inicial de jugador 1
         gs.j[1].combo   = 0;   // combo inicial de jugador 1
@@ -828,6 +1276,10 @@ static void Demo_Enter(uint8_t screen) {   // punto unico de entrada a cualquier
         gs.j[0].combo   = 8;      // combo de adorno de jugador 0
         gs.j[1].puntaje = 980;    // puntaje de adorno de jugador 1
         gs.j[1].combo   = 5;      // combo de adorno de jugador 1
+        break;
+
+    case DEMO_MENU_DIFICULTAD:
+        Renderer_DrawMenu(dificultad_cursor);   // reusa la pantalla legada de FACIL/MEDIO/PRO, ahora conectada de verdad (ver MenuDificultad_Procesar)
         break;
 
     case DEMO_MENU_CANCIONES:
@@ -970,15 +1422,15 @@ static uint8_t ComboSalir_Detectado(void) {   // revisa si algun jugador lleva 3
  * automatica, sin niveles fijos predefinidos). Las direcciones se codifican
  * como 0=ARRIBA, 1=ABAJO, 2=IZQUIERDA, 3=DERECHA. */
 
-typedef enum {
+typedef enum {   // fases de la maquina de estados de Simon+Joystick (1P y 2P comparten estos mismos 4 nombres, ver sj2_fase)
     SJ_MOSTRANDO,   /* reproduciendo la secuencia (parpadeo on/off)          */
     SJ_ESPERANDO,   /* esperando que el jugador repita paso por paso         */
     SJ_ACIERTO,     /* pausa corta de "bien" antes de mostrar la siguiente   */
     SJ_GAMEOVER     /* fallo: pantalla de resultado, espera mover el stick
                        (reintentar) o B1 (salir) -- ver comentario arriba   */
-} SimonJoyFase_t;
+} SimonJoyFase_t;   // este mismo tipo lo reusan Botones (btn_fase) y Guitar Hero para sus propias maquinas de estado, ya que las 4 fases son identicas en concepto
 
-#define SJ_MAX_LONGITUD      64
+#define SJ_MAX_LONGITUD      64   // tamaño maximo del arreglo sj_secuencia -- si una partida llegara a superar 64 rondas (dificilmente, con velocidad creciente) dejaria de agregar pasos nuevos, no se rompe nada
 #define SJ_PAUSA_ACIERTO_MS  550U  // duracion de la pausa de "acierto" antes de mostrar el siguiente paso; un valor demasiado bajo hace que la siguiente ronda comience de forma abrupta, sin dar tiempo de reaccion al jugador
 
 /* La velocidad se modela como un multiplicador: en la ronda 1 vale x0.10
@@ -1003,7 +1455,7 @@ static uint8_t        sj_paso_esperado;  /* indice que se espera del jugador  */
 static uint8_t        sj_mostrando_on;   /* sub-fase del parpadeo (on/off)    */
 static uint8_t        sj_paso_dibujado = 0xFF; /* ultimo paso pintado en el D-pad
     (0xFF=ninguno) -- para actualizar solo el boton que cambio en vez de
-    redibujar toda la pantalla (evita el parpadeo de un FillScreen completo) */
+    redibujar toda la pantalla (evita el parpadeo de un FillScreen completo) */   // arranca en 0xFF ("nada pintado") para que el primer paso real se dibuje como un cambio
 static uint8_t        sj_mejor_racha;    /* mejor racha de esta sesion        */
 static SimonJoyFase_t sj_fase;   // fase actual de la maquina de estados (MOSTRANDO/ESPERANDO/ACIERTO/GAMEOVER)
 static uint32_t       sj_tick_fase;   // tick en que arranco la fase actual, para medir cuanto lleva en ella
@@ -1019,7 +1471,7 @@ static uint8_t         joy_listo_dir = 1;   // 1 = el stick ya volvio al centro 
  * indica que modo de juego iniciar al llegar a "GO" entre las 3 opciones
  * disponibles (BOTONES, SIMONJOY, GUITAR); ver GuitarHero2_IniciarAmbos y
  * GuitarHero_IniciarSolo mas abajo. */
-typedef enum { MODO_SEL_BOTONES = 0, MODO_SEL_SIMONJOY, MODO_SEL_GUITAR } ModoSeleccion_t;
+typedef enum { MODO_SEL_BOTONES = 0, MODO_SEL_SIMONJOY, MODO_SEL_GUITAR } ModoSeleccion_t;   // que modo de juego se eligio en DEMO_MODO_* -- el ORDEN debe coincidir con el orden de las 3 tarjetas del menu (Renderer_DrawSeleccionModo)
 static ModoSeleccion_t modo_confirmado = MODO_SEL_BOTONES;   // que modo real arrancar cuando el conteo automatico llegue a GO
 static uint8_t  conteo_auto = 0;   // 1 mientras el conteo 3-2-1-GO esta avanzando solo (sin esperar B1)
 static uint32_t conteo_tick = 0;   // tick en que se mostro el numero actual del conteo
@@ -1038,8 +1490,8 @@ static uint8_t SJ_Random4(void) {   // genera un numero pseudoaleatorio 0-3, ava
  * distinta -- eligiendo uniforme entre las otras 3 direcciones. */
 static uint8_t SJ_SiguienteDireccion(void) {   // elige la proxima direccion a agregar a la secuencia, evitando una 3ra repeticion seguida
     uint8_t nuevo = SJ_Random4();   // primer candidato aleatorio
-    if (sj_longitud >= 2 &&
-        sj_secuencia[sj_longitud - 1] == sj_secuencia[sj_longitud - 2] &&
+    if (sj_longitud >= 2 &&   // solo puede haber una 3ra repeticion si ya hay al menos 2 pasos previos en la secuencia
+        sj_secuencia[sj_longitud - 1] == sj_secuencia[sj_longitud - 2] &&   // los 2 ultimos pasos ya son iguales entre si
         nuevo == sj_secuencia[sj_longitud - 1]) {   // las 2 direcciones anteriores ya son iguales entre si Y el candidato nuevo tambien coincide (seria una 3ra repeticion)
         nuevo = (uint8_t)((nuevo + 1u + (SJ_Random4() % 3u)) & 0x3u);   // fuerza un valor DISTINTO al repetido, eligiendo uniforme entre las otras 3 direcciones posibles
     }
@@ -1059,15 +1511,15 @@ static uint16_t SimonJoy_IntervaloActual(void) {   // calcula cuantos ms dura ca
  * a una banda demasiado angosta, dejando el juego sin responder despues
  * del primer acierto. */
 static uint8_t Joystick_LeerDireccion(void) {   // devuelve la direccion (0-3) del joystick fisico usado en el modo de 1 jugador, detectada por flanco
-    uint16_t bajo_y, alto_y, bajo_x, alto_x;
+    uint16_t bajo_y, alto_y, bajo_x, alto_x;   // rango "sin direccion" (zona muerta) de cada eje, calculado por Joy_Umbrales segun el centro medido
     Joy_Umbrales(centro_j2y, &bajo_y, &alto_y);   // rango de la zona muerta del eje Y de J2, relativo a su centro medido
     Joy_Umbrales(centro_j2x, &bajo_x, &alto_x);   // rango de la zona muerta del eje X de J2, relativo a su centro medido
 
-    if (!joy_listo_dir) {
-        if (joystick2_y < alto_y && joystick2_y > bajo_y && joystick2_x < alto_x && joystick2_x > bajo_x) {
-            joy_listo_dir = 1;
+    if (!joy_listo_dir) {   // el stick todavia no volvio al centro desde el ultimo movimiento contado -- no se puede contar otro todavia
+        if (joystick2_y < alto_y && joystick2_y > bajo_y && joystick2_x < alto_x && joystick2_x > bajo_x) {   // los 2 ejes ya volvieron dentro de la zona muerta (centrado)
+            joy_listo_dir = 1;   // habilita la deteccion del proximo movimiento
         }
-        return 0xFF;
+        return 0xFF;   // este tick no cuenta como movimiento nuevo, sin importar si recien se centro o seguia afuera
     }
 
     /* Los ejes electricos del joystick fisico usado en el modo de 1 jugador
@@ -1079,18 +1531,18 @@ static uint8_t Joystick_LeerDireccion(void) {   // devuelve la direccion (0-3) d
      * direccion IZQUIERDA/DERECHA a partir del canal Y. */
     int32_t dev_vert  = (int32_t)joystick2_x - (int32_t)centro_j2x;  /*  + = ABAJO   */
     int32_t dev_horiz = (int32_t)joystick2_y - (int32_t)centro_j2y;  /*  + = IZQUIERDA */
-    int32_t abs_vert  = (dev_vert  < 0) ? -dev_vert  : dev_vert;
-    int32_t abs_horiz = (dev_horiz < 0) ? -dev_horiz : dev_horiz;
+    int32_t abs_vert  = (dev_vert  < 0) ? -dev_vert  : dev_vert;   // magnitud de la desviacion vertical, sin signo
+    int32_t abs_horiz = (dev_horiz < 0) ? -dev_horiz : dev_horiz;   // magnitud de la desviacion horizontal, sin signo
 
-    uint8_t dir = 0xFF;
-    if (abs_vert >= (int32_t)JOY_UMBRAL_DESVIO && abs_vert >= abs_horiz) {
+    uint8_t dir = 0xFF;   // 0xFF = todavia ninguna direccion valida detectada este tick
+    if (abs_vert >= (int32_t)JOY_UMBRAL_DESVIO && abs_vert >= abs_horiz) {   // el eje vertical supera el umbral Y es el mas inclinado de los 2 (evita diagonales ambiguas)
         dir = (dev_vert > 0) ? 1 : 0;    /* ABAJO : ARRIBA  */
-        joy_listo_dir = 0;
-    } else if (abs_horiz >= (int32_t)JOY_UMBRAL_DESVIO) {
+        joy_listo_dir = 0;   // consume la deteccion: hay que volver al centro antes de contar el proximo movimiento
+    } else if (abs_horiz >= (int32_t)JOY_UMBRAL_DESVIO) {   // el eje horizontal supera el umbral (y ya se descarto que el vertical fuera el dominante)
         dir = (dev_horiz < 0) ? 3 : 2;   /* DERECHA cuando joystick2_y cae por debajo de su centro : IZQUIERDA */
-        joy_listo_dir = 0;
+        joy_listo_dir = 0;   // idem, consume la deteccion
     }
-    if (dir != 0xFF) printf("[INPUT] joystick J2 Solo = %s\r\n", DIR_NOMBRE[dir]);
+    if (dir != 0xFF) printf("[INPUT] joystick J2 Solo = %s\r\n", DIR_NOMBRE[dir]);   // log solo cuando SI se detecto una direccion real
     return dir;
 }
 
@@ -1103,25 +1555,38 @@ static uint8_t Joystick_LeerDireccion(void) {   // devuelve la direccion (0-3) d
  * las trataba como corruptas, rompiendo literales como "Racha: " en
  * pantalla) por '-'. Es un cambio puramente de visualizacion (no toca
  * timing ni logica de juego del modo de 1 jugador). */
-static void Texto_Sanear(char *s) {
-    for (; *s; s++) {
-        char c = *s;
-        if (c >= 'a' && c <= 'z') continue;   // minuscula legitima, no tocar
-        if (c < 32 || c > 90) *s = '-';
+static void Texto_Sanear(char *s) {   // reemplaza bytes fuera del rango imprimible de la fuente por '-', para no mostrar simbolos corruptos en pantalla (copia local de la misma mitigacion que renderer.c)
+    for (; *s; s++) {   // recorre la cadena caracter por caracter hasta el '\0' final, modificandola IN-PLACE
+        char c = *s;   // caracter actual
+        if (c >= 'a' && c <= 'z') {   // minuscula legitima (la fuente las soporta, normalizandolas a mayuscula al dibujar)
+            *s = (char)(c - 32);  // Convierte minusculas a MAYUSCULAS
+            continue;   // ya se resolvio este caracter, sigue con el siguiente sin evaluar el rango de abajo
+        }
+        if (c < 32 || c > 90) *s = '-';   // fuera del rango imprimible que soporta la fuente (32-90) -- lo reemplaza por '-' en vez de dejar un byte corrupto en pantalla
     }
 }
 
-static void SimonJoy_DibujarGameOver(void) {   // dibuja la pantalla completa de "GAME OVER" del modo 1 jugador (racha actual y mejor racha de la sesion)
-    char linea[32];   // buffer temporal para armar cada linea de texto con snprintf
+static void SimonJoy_DibujarGameOver(void) {   // dibuja la pantalla completa de "GAME OVER" del modo 1 jugador
+    char linea[32];   // buffer temporal para armar cada linea de texto con snprintf antes de dibujarla
+
+    /* NO tocar la orientacion aca: SimonJoy 1 jugador se mantiene en
+     * paisaje (320x240, heredado del recorrido de menus, ver SimonJoy_
+     * Iniciar) durante TODA la partida -- esta pantalla es solo el final,
+     * no un cambio de modo. */
     ILI9341_FillScreen(COLOR_BLACK);   // borra toda la pantalla a negro antes de dibujar el resultado
-    ILI9341_DrawString(70, 80, "GAME OVER", COLOR_RED, COLOR_BLACK, 3);   // titulo grande (escala 3) en rojo
-    snprintf(linea, sizeof(linea), "Racha: %u", (unsigned)(sj_longitud - 1));   // arma el texto de la racha de ESTA partida (sj_longitud-1 porque el ultimo paso agregado fue el que fallo)
+
+    ILI9341_DrawString(70, 80, "GAME OVER", COLOR_RED, COLOR_BLACK, 3);   // titulo grande (escala 3) en rojo -- cambiar el 3 cambia el tamaño del titulo
+
+    snprintf(linea, sizeof(linea), "Racha: %u", (unsigned)(sj_longitud - 1));   // sj_longitud-1 porque el ultimo paso agregado fue el que fallo (no cuenta como acertado)
     Texto_Sanear(linea);
-    ILI9341_DrawString(100, 140, linea, COLOR_WHITE, COLOR_BLACK, 2);   // dibuja la racha de esta partida
-    snprintf(linea, sizeof(linea), "Mejor: %u", (unsigned)sj_mejor_racha);   // arma el texto de la mejor racha de la sesion completa
+    ILI9341_DrawString(100, 140, linea, COLOR_WHITE, COLOR_BLACK, 2);   // racha de ESTA partida
+
+    snprintf(linea, sizeof(linea), "Mejor: %u", (unsigned)sj_mejor_racha);   // mejor racha de TODA la sesion (no se resetea entre partidas)
     Texto_Sanear(linea);
-    ILI9341_DrawString(100, 165, linea, COLOR_YELLOW, COLOR_BLACK, 2);   // dibuja la mejor racha
-    ILI9341_DrawString(35, 210, "mueve=reintentar  B1=salir", COLOR_GRAY, COLOR_BLACK, 1);   // instrucciones de que hacer desde esta pantalla
+    ILI9341_DrawString(100, 165, linea, COLOR_YELLOW, COLOR_BLACK, 2);
+
+    ILI9341_DrawString(60, 205, "mueve=reintentar", COLOR_GRAY, COLOR_BLACK, 1);   // instruccion: mover el joystick (no hay boton dedicado) reinicia la partida
+    ILI9341_DrawString(60, 218, "ROJO 2s=menu de modos", COLOR_GRAY, COLOR_BLACK, 1);   // atajo de salida, ver SalirGameOver1P_Detectado
 }
 
 /* Numero de ronda mostrado en tiempo real en la esquina superior derecha
@@ -1131,7 +1596,7 @@ static void SimonJoy_DibujarGameOver(void) {   // dibuja la pantalla completa de
 static void SimonJoy_MostrarRacha(uint8_t racha) {   // redibuja solo el numero de ronda en la esquina superior derecha, sin tocar el resto de la pantalla
     char buf[12];   // buffer para el texto "RONDA:NN"
     snprintf(buf, sizeof(buf), "RONDA:%2u", racha);   // arma el texto con el numero de ronda actual (ancho fijo de 2 digitos)
-    Texto_Sanear(buf);
+    Texto_Sanear(buf);   // por si algun caracter quedo fuera de rango (defensivo, aca siempre son digitos)
     ILI9341_FillRect(LCD_W - 80, 0, 80, 26, COLOR_DARKGRAY);   // borra solo el recuadro de la esquina (80px de ancho, pegado al borde derecho) antes de escribir encima
     ILI9341_DrawString(LCD_W - 74, 9, buf, COLOR_YELLOW, COLOR_DARKGRAY, 1);   // dibuja el texto en amarillo sobre fondo gris oscuro
 }
@@ -1201,7 +1666,7 @@ static void SimonJoy_ConfirmarInput(uint8_t dir) {   // apaga YA la flecha actua
 static void SimonJoy_Actualizar(void) {   // tick no bloqueante de la maquina de estados de SimonJoy 1 jugador; se llama una vez por vuelta del loop principal
     uint32_t ahora = HAL_GetTick();   // tick actual, usado para medir tiempos en todas las fases
 
-    if (sj_fase != SJ_GAMEOVER) {
+    if (sj_fase != SJ_GAMEOVER) {   // en game over se muestra otra pantalla completa, no tiene sentido seguir moviendo el cursor del D-pad
         Renderer_ActualizarCursorJoystick(joystick2_x, joystick2_y, joy_listo_dir);   // mueve el cursor "X" del centro del D-pad segun la posicion cruda actual del stick (menos en game over, que muestra otra pantalla)
     }
 
@@ -1218,22 +1683,22 @@ static void SimonJoy_Actualizar(void) {   // tick no bloqueante de la maquina de
         if ((ahora - sj_tick_fase) < medio) break;   // todavia no paso suficiente tiempo para cambiar de sub-fase
         sj_tick_fase = ahora;   // marca el inicio de la nueva sub-fase
 
-        if (sj_mostrando_on) {
+        if (sj_mostrando_on) {   // estaba en la mitad "encendida" del parpadeo -- toca apagar
             /* mitad "apagada" del parpadeo, mismo paso */
             SimonJoy_MostrarPaso(0xFF);   // apaga la flecha actual (sigue siendo el mismo paso, solo cambia a "apagado")
             sj_mostrando_on = 0;   // pasa a la sub-fase "apagada"
-        } else {
+        } else {   // estaba apagado -- toca avanzar al siguiente paso (o terminar de mostrar la secuencia)
             sj_paso_mostrar++;   // avanza al siguiente paso de la secuencia a mostrar
             if (sj_paso_mostrar >= sj_longitud) {   // ya se mostraron TODOS los pasos de la secuencia
                 sj_fase          = SJ_ESPERANDO;   // pasa a esperar la respuesta del jugador
                 sj_paso_esperado = 0;   // el jugador debe repetir empezando desde el primer paso
                 joy_listo_dir    = 1;   // habilita la deteccion de movimiento para la primera entrada del jugador
-            } else {
+            } else {   // todavia quedan pasos de la secuencia por mostrar
                 SimonJoy_MostrarPaso(sj_secuencia[sj_paso_mostrar]);   // prende la flecha del siguiente paso de la secuencia
                 sj_mostrando_on = 1;   // vuelve a la sub-fase "encendida"
             }
         }
-        break;
+        break;   // cierra el case SJ_MOSTRANDO
     }
 
     case SJ_ESPERANDO: {   // esperando que el jugador repita la secuencia paso a paso con el joystick
@@ -1241,8 +1706,8 @@ static void SimonJoy_Actualizar(void) {   // tick no bloqueante de la maquina de
         if (dir == 0xFF) break;   // todavia no hay una entrada nueva, sigue esperando
 
         SimonJoy_ConfirmarInput(dir);  /* parpadeo real, aunque se repita la misma direccion */
-        printf("[SIMONJOY 1P] dir=%u esperado=%u %s\r\n", dir, sj_secuencia[sj_paso_esperado],
-               (dir == sj_secuencia[sj_paso_esperado]) ? "OK" : "FALLO");   // log de la entrada: que se leyo, que se esperaba, y si fue acierto o fallo
+        printf("[SIMONJOY 1P] dir=%u esperado=%u %s\r\n", dir, sj_secuencia[sj_paso_esperado],   // log de la entrada: que se leyo, que se esperaba, y si fue acierto o fallo
+               (dir == sj_secuencia[sj_paso_esperado]) ? "OK" : "FALLO");
 
         if (dir != sj_secuencia[sj_paso_esperado]) {   // la direccion leida NO coincide con la esperada -- fallo
             if ((uint8_t)(sj_longitud - 1) > sj_mejor_racha) sj_mejor_racha = (uint8_t)(sj_longitud - 1);   // si la racha de esta partida (pasos acertados antes de fallar) supera la mejor de la sesion, la actualiza
@@ -1252,7 +1717,7 @@ static void SimonJoy_Actualizar(void) {   // tick no bloqueante de la maquina de
             sj_flash_pendiente = 0xFF;  /* cancela: game over dibuja otra pantalla encima */
             Buzzer_Beep(350);  /* beep largo de error (extiende el corto que ya sonaba) */
             SimonJoy_DibujarGameOver();   // dibuja la pantalla de resultado
-            break;
+            break;   // corta el case SJ_ESPERANDO aca, no sigue evaluando el resto de este bloque (el fallo ya se manejo por completo)
         }
 
         sj_paso_esperado++;   // acerto este paso: avanza al siguiente paso esperado
@@ -1270,13 +1735,13 @@ static void SimonJoy_Actualizar(void) {   // tick no bloqueante de la maquina de
                 queda encendido durante la pausa y el primer paso de la
                 siguiente repeticion no se ve como un flanco nuevo */
             {
-                static const PasoSonido_t BEEP_RONDA[3] = {
+                static const PasoSonido_t BEEP_RONDA[3] = {   // jingle corto de "ronda superada": tono-silencio-tono; cambiar estos numeros cambia el ritmo/tono del jingle
                     { BUZZER_TONO_HZ, 70 }, { 0, 60 }, { BUZZER_TONO_HZ, 70 }
                 };  /* 2 pitidos cortos */
                 Buzzer_Patron(BEEP_RONDA, 3);   // suena el jingle corto de "ronda superada"
             }
         }
-        break;
+        break;   // cierra el case SJ_ESPERANDO
     }
 
     case SJ_ACIERTO:   // pausa corta despues de completar una ronda, antes de repetir la secuencia (ahora un paso mas larga)
@@ -1286,16 +1751,16 @@ static void SimonJoy_Actualizar(void) {   // tick no bloqueante de la maquina de
         sj_tick_fase    = ahora;   // marca el inicio de la nueva reproduccion
         sj_fase         = SJ_MOSTRANDO;   // vuelve a la fase de mostrar la secuencia (ahora mas larga)
         SimonJoy_MostrarPaso(sj_secuencia[0]);   // prende de una vez la primera flecha de la nueva repeticion
-        break;
+        break;   // cierra el case SJ_ACIERTO
 
-    case SJ_GAMEOVER:
+    case SJ_GAMEOVER:   // esperando que el jugador mueva el stick para reintentar (o el atajo de ROJO 2s para salir, manejado aparte en el bucle principal)
         /* Al no existir un pulsador dedicado en el joystick, mover el stick
          * en cualquier direccion reinicia la partida (mismo patron de
          * "cualquier entrada reintenta" utilizado en el modo de botones);
          * la salida mediante B1 se maneja por separado en el bucle
          * principal. */
         if (Joystick_LeerDireccion() != 0xFF) { printf("[SIMONJOY 1P] retry\r\n"); SimonJoy_Iniciar(); }   // cualquier movimiento del stick reinicia una partida nueva
-        break;
+        break;   // cierra el case SJ_GAMEOVER
     }
 }
 
@@ -1340,12 +1805,12 @@ static uint8_t SJ2_Random4(uint8_t p) {   // igual que SJ_Random4 pero con la se
 /* mismo anti-repeticion que SJ_SiguienteDireccion, por jugador */
 static uint8_t SJ2_SiguienteDireccion(uint8_t p) {   // elige el proximo paso de la secuencia del jugador p, evitando una 3ra repeticion seguida
     uint8_t nuevo = SJ2_Random4(p);   // candidato aleatorio inicial
-    if (sj2_longitud[p] >= 2 &&
-        sj2_secuencia[p][sj2_longitud[p] - 1] == sj2_secuencia[p][sj2_longitud[p] - 2] &&
+    if (sj2_longitud[p] >= 2 &&   // solo puede haber 3ra repeticion si ya hay al menos 2 pasos previos de ESTE jugador
+        sj2_secuencia[p][sj2_longitud[p] - 1] == sj2_secuencia[p][sj2_longitud[p] - 2] &&   // sus 2 ultimos pasos ya son iguales entre si
         nuevo == sj2_secuencia[p][sj2_longitud[p] - 1]) {   // los 2 ultimos pasos de ESTE jugador ya son iguales y el candidato tambien coincide
         nuevo = (uint8_t)((nuevo + 1u + (SJ2_Random4(p) % 3u)) & 0x3u);   // fuerza un valor distinto, elegido uniforme entre las otras 3 direcciones
     }
-    return nuevo;
+    return nuevo;   // direccion final (original o forzada) para el siguiente paso de la secuencia de este jugador
 }
 
 static uint16_t SimonJoy2_IntervaloActual(uint8_t p) {   // misma formula que SimonJoy_IntervaloActual pero con la longitud de secuencia PROPIA del jugador p
@@ -1370,11 +1835,11 @@ static uint8_t Joystick2_LeerDireccion(uint8_t p) {   // igual que Joystick_Leer
     Joy_Umbrales((hw == 0) ? centro_j1x : centro_j2x, &bajo_x, &alto_x);   // idem para el eje X
 
     if (!sj2_joy_listo_dir[p]) {   // este jugador todavia no volvio al centro tras su ultimo movimiento
-        if (jy < alto_y && jy > bajo_y &&
-            jx < alto_x && jx > bajo_x) {   // ambos ejes ya estan dentro de la banda muerta
+        if (jy < alto_y && jy > bajo_y &&   // eje Y de este jugador dentro de su banda muerta
+            jx < alto_x && jx > bajo_x) {   // Y el eje X tambien dentro de su banda muerta
             sj2_joy_listo_dir[p] = 1;   // habilita el proximo movimiento de ESTE jugador
         }
-        return 0xFF;
+        return 0xFF;   // este tick no cuenta como movimiento nuevo para este jugador
     }
     /* Se utiliza el eje dominante (no el primero evaluado): un empuje
      * impreciso del joystick puede superar el umbral de ambos ejes
@@ -1392,8 +1857,8 @@ static uint8_t Joystick2_LeerDireccion(uint8_t p) {   // igual que Joystick_Leer
      * comentario mas arriba): el canal "X" controla el movimiento VERTICAL y
      * el canal "Y" el LATERAL. El fisico J1 (hw==0), confirmado correcto tal
      * cual esta, no tiene ese cruce: cada canal controla su eje "natural". */
-    int32_t dev_vert  = (hw == 1) ? dev_x : dev_y;   // vertical: canal X si es el fisico J2 (cruzado), canal Y si es el fisico J1
-    int32_t dev_horiz = (hw == 1) ? dev_y : dev_x;   // lateral: el canal que no se uso arriba
+    int32_t dev_vert  = (hw == 1) ? dev_y : dev_x;   // vertical: canal X si es el fisico J2 (cruzado), canal Y si es el fisico J1
+    int32_t dev_horiz = (hw == 1) ? dev_x : dev_y;   // lateral: el canal que no se uso arriba
     int32_t abs_vert  = (dev_vert  < 0) ? -dev_vert  : dev_vert;   // magnitud vertical
     int32_t abs_horiz = (dev_horiz < 0) ? -dev_horiz : dev_horiz;   // magnitud horizontal
 
@@ -1416,8 +1881,8 @@ static uint8_t Joystick2_LeerDireccion(uint8_t p) {   // igual que Joystick_Leer
          * stick visualmente apuntando a la direccion correcta. Misma
          * polaridad (sin invertir) que Joystick_LeerDireccion, el modo de 1
          * jugador que ya esta confirmado correcto. */
-        dir = (dev_vert > 0) ? 1 : 0;    /* ABAJO cuando el eje vertical crece, ARRIBA cuando decrece */
-        sj2_joy_listo_dir[p] = 0;   // bloquea nuevas detecciones para este jugador hasta que vuelva al centro
+    	dir = (dev_vert > 0) ? 0 : 1;    /* ABAJO cuando el eje vertical crece, ARRIBA cuando decrece */
+    	sj2_joy_listo_dir[p] = 0;   // bloquea nuevas detecciones para este jugador hasta que vuelva al centro
     } else if (abs_horiz >= (int32_t)JOY_UMBRAL_DESVIO) {   // horizontal supero su umbral
         /* CORREGIDO (2026-08-02, confirmado con el usuario en hardware real
          * con una prueba de las 4 direcciones una por una, comparando contra
@@ -1432,11 +1897,11 @@ static uint8_t Joystick2_LeerDireccion(uint8_t p) {   // igual que Joystick_Leer
          * consola decia IZQUIERDA). Los 2 fisicos comparten la MISMA
          * polaridad una vez que dev_horiz ya identifica el canal correcto
          * (ver dev_horiz arriba) -- no hace falta distinguir por hw aca. */
-        dir = (dev_horiz > 0) ? 2 : 3;   /* IZQUIERDA cuando crece, DERECHA cuando decrece -- misma polaridad para los 2 fisicos */
-        sj2_joy_listo_dir[p] = 0;
+    	dir = (dev_horiz > 0) ? 3 : 2;   /* IZQUIERDA cuando crece, DERECHA cuando decrece -- misma polaridad para los 2 fisicos */
+    	sj2_joy_listo_dir[p] = 0;   // bloquea nuevas detecciones para este jugador hasta que vuelva al centro
     }
     if (dir != 0xFF) printf("[INPUT] joystick J%u = %s\r\n", (unsigned)(hw + 1), DIR_NOMBRE[dir]);   // log con el numero de joystick FISICO (hw+1), no el jugador logico
-    return dir;
+    return dir;   // direccion detectada (0-3) o 0xFF si ninguna
 }
 
 static void SimonJoy2_MostrarPaso(uint8_t p, uint8_t nuevo) {   // igual que SimonJoy_MostrarPaso pero para la mitad de pantalla del jugador p
@@ -1449,11 +1914,11 @@ static void SimonJoy2_MostrarPaso(uint8_t p, uint8_t nuevo) {   // igual que Sim
 static void SimonJoy2_ConfirmarInput(uint8_t p, uint8_t dir) {   // igual que SimonJoy_ConfirmarInput pero para el jugador p
     if (sj2_paso_dibujado[p] != 0xFF) {   // si este jugador tenia algo pintado
         Renderer_UpdateModoSimonJoystick2PPaso(p, sj2_paso_dibujado[p], 0xFF);   // lo apaga ya
-        sj2_paso_dibujado[p] = 0xFF;
+        sj2_paso_dibujado[p] = 0xFF;   // marca que este jugador no tiene nada pintado ahora
     }
     sj2_flash_pendiente[p] = dir;   // guarda que direccion prender despues del apagon, para este jugador
     sj2_flash_tick[p]      = HAL_GetTick();   // marca el instante del apagon de este jugador
-    Buzzer_Beep(90);
+    Buzzer_Beep(90);   // beep corto de confirmacion, compartido entre los 2 jugadores (buzzer mono)
 }
 
 /* Inicia (o reinicia) unicamente al jugador p, sin afectar la pantalla del otro jugador. */
@@ -1483,17 +1948,17 @@ static void SimonJoy2_IniciarAmbos(void) {   // arranca una partida nueva de Sim
     ILI9341_SetFlip180(1);   // aplica un giro de 180 grados en hardware para la orientacion de la mitad del jugador 2
     for (uint8_t p = 0; p < 2; p++) {   // inicializa el estado de ambos jugadores
         sj2_seed[p] ^= (HAL_GetTick() + p * 977u + 1u);   // remezcla la semilla de cada jugador (offset distinto al de ReiniciarJugador, para variar aun mas)
-        if (sj2_seed[p] == 0) sj2_seed[p] = 1;
+        if (sj2_seed[p] == 0) sj2_seed[p] = 1;   // evita semilla en 0
 
-        sj2_longitud[p]        = 1;
-        sj2_secuencia[p][0]    = SJ2_Random4(p);
-        sj2_paso_mostrar[p]    = 0;
-        sj2_mostrando_on[p]    = 1;
-        sj2_fase[p]            = SJ_MOSTRANDO;
-        sj2_tick_fase[p]       = HAL_GetTick();
-        sj2_joy_listo_dir[p]   = 1;
-        sj2_flash_pendiente[p] = 0xFF;
-        sj2_paso_dibujado[p]   = sj2_secuencia[p][0];
+        sj2_longitud[p]        = 1;   // secuencia nueva de 1 paso
+        sj2_secuencia[p][0]    = SJ2_Random4(p);   // primer paso aleatorio de este jugador
+        sj2_paso_mostrar[p]    = 0;   // arranca mostrando desde el paso 0
+        sj2_mostrando_on[p]    = 1;   // arranca en la mitad "encendida" del parpadeo
+        sj2_fase[p]            = SJ_MOSTRANDO;   // arranca reproduciendo la secuencia
+        sj2_tick_fase[p]       = HAL_GetTick();   // marca el inicio de esta fase
+        sj2_joy_listo_dir[p]   = 1;   // habilita deteccion de movimiento de entrada
+        sj2_flash_pendiente[p] = 0xFF;   // sin flash pendiente
+        sj2_paso_dibujado[p]   = sj2_secuencia[p][0];   // sincroniza el paso pintado con el primero de la secuencia
     }
     Renderer_DrawModoSimonJoystick2P(sj2_secuencia[0][0], sj2_secuencia[1][0]);   // dibuja las 2 mitades completas de una vez, cada una con su primer paso encendido
     Renderer_ActualizarRachaJoystick2P(0, sj2_longitud[0]);   // numero de ronda inicial de jugador 0
@@ -1507,7 +1972,7 @@ static void SimonJoy2_IniciarAmbos(void) {   // arranca una partida nueva de Sim
 static void SimonJoy2_ActualizarJugador(uint8_t p) {   // igual que SimonJoy_Actualizar pero para un jugador (p); se llama 2 veces por ciclo, una por jugador (ver SimonJoy2_Actualizar)
     uint32_t ahora = HAL_GetTick();   // tick actual, usado en todas las fases
 
-    if (sj2_fase[p] != SJ_GAMEOVER) {
+    if (sj2_fase[p] != SJ_GAMEOVER) {   // en game over de este jugador se muestra otra pantalla, no tiene sentido mover su cursor
         /* El primer parametro de Renderer_ActualizarCursorJoystick2P
          * corresponde siempre al jugador logico "p" (determina en que
          * mitad de la pantalla se dibuja); unicamente el joystick fisico
@@ -1549,98 +2014,98 @@ static void SimonJoy2_ActualizarJugador(uint8_t p) {   // igual que SimonJoy_Act
         uint16_t centro_y = (hw == 0) ? centro_j1y : centro_j2y;   // idem canal "Y"
         uint16_t sx = Joy_CursorEscala(jx, centro_x);   // canal "X" reescalado y centrado
         uint16_t sy = Joy_CursorEscala(jy, centro_y);   // canal "Y" reescalado y centrado
-        if (hw == 1) {
-            Renderer_ActualizarCursorJoystick2P(p, sx, sy, sj2_joy_listo_dir[p]);
-        } else {
-            Renderer_ActualizarCursorJoystick2P(p, sy, sx, sj2_joy_listo_dir[p]);
+        if (hw == 1) {   // fisico J2: tiene el cruce electrico real (ver comentario largo arriba) -- se le pasan sx/sy intercambiados para cancelarlo
+            Renderer_ActualizarCursorJoystick2P(p, sy, sx, sj2_joy_listo_dir[p]); // Intercambiado sx <-> sy
+        } else {   // fisico J1: sin cruce electrico real -- se le pasan sx/sy tal cual
+            Renderer_ActualizarCursorJoystick2P(p, sx, sy, sj2_joy_listo_dir[p]); // Intercambiado sy <-> sx
         }
     }
 
     if (sj2_flash_pendiente[p] != 0xFF && (ahora - sj2_flash_tick[p]) >= SJ_FLASH_INPUT_MS) {   // hay un prendido pendiente de este jugador y ya paso el tiempo minimo
         SimonJoy2_MostrarPaso(p, sj2_flash_pendiente[p]);   // prende la flecha confirmada de este jugador
-        sj2_flash_pendiente[p] = 0xFF;
+        sj2_flash_pendiente[p] = 0xFF;   // consume el pendiente, para no repetirlo el proximo tick
     }
 
     switch (sj2_fase[p]) {   // logica de la fase actual de ESTE jugador (independiente del otro)
-    case SJ_MOSTRANDO: {
+    case SJ_MOSTRANDO: {   // reproduciendo la secuencia de ESTE jugador
         uint16_t medio = (uint16_t)(SimonJoy2_IntervaloActual(p) / 2U);   // mitad del intervalo actual de este jugador
         if ((ahora - sj2_tick_fase[p]) < medio) break;   // todavia no toca cambiar de sub-fase para este jugador
-        sj2_tick_fase[p] = ahora;
+        sj2_tick_fase[p] = ahora;   // marca el inicio de la nueva sub-fase
 
-        if (sj2_mostrando_on[p]) {
+        if (sj2_mostrando_on[p]) {   // estaba encendido -- toca apagar
             SimonJoy2_MostrarPaso(p, 0xFF);   // apaga la flecha actual de este jugador
-            sj2_mostrando_on[p] = 0;
-        } else {
+            sj2_mostrando_on[p] = 0;   // pasa a la sub-fase apagada
+        } else {   // estaba apagado -- toca avanzar de paso
             sj2_paso_mostrar[p]++;   // avanza al siguiente paso de la secuencia de ESTE jugador
             if (sj2_paso_mostrar[p] >= sj2_longitud[p]) {   // ya mostro toda su secuencia
                 sj2_fase[p]          = SJ_ESPERANDO;   // pasa a esperar la respuesta de este jugador
-                sj2_paso_esperado[p] = 0;
-                sj2_joy_listo_dir[p] = 1;
-            } else {
+                sj2_paso_esperado[p] = 0;   // debe repetir desde el primer paso
+                sj2_joy_listo_dir[p] = 1;   // habilita la deteccion de su primera entrada
+            } else {   // todavia quedan pasos de su secuencia por mostrar
                 SimonJoy2_MostrarPaso(p, sj2_secuencia[p][sj2_paso_mostrar[p]]);   // prende el siguiente paso de SU secuencia
-                sj2_mostrando_on[p] = 1;
+                sj2_mostrando_on[p] = 1;   // vuelve a la sub-fase encendida
             }
         }
-        break;
+        break;   // cierra el case SJ_MOSTRANDO
     }
 
-    case SJ_ESPERANDO: {
+    case SJ_ESPERANDO: {   // esperando la respuesta de ESTE jugador
         uint8_t dir = Joystick2_LeerDireccion(p);   // intenta leer una direccion nueva del joystick fisico de ESTE jugador
         if (dir == 0xFF) break;   // todavia nada nuevo
 
-        SimonJoy2_ConfirmarInput(p, dir);
-        printf("[SIMONJOY 2P] P%u dir=%u esperado=%u %s\r\n", p, dir, sj2_secuencia[p][sj2_paso_esperado[p]],
-               (dir == sj2_secuencia[p][sj2_paso_esperado[p]]) ? "OK" : "FALLO");   // log con el jugador logico, la direccion leida, la esperada y si acerto
+        SimonJoy2_ConfirmarInput(p, dir);   // parpadeo real de confirmacion, aunque se repita la misma direccion
+        printf("[SIMONJOY 2P] P%u dir=%u esperado=%u %s\r\n", p, dir, sj2_secuencia[p][sj2_paso_esperado[p]],   // log con el jugador logico, la direccion leida, la esperada y si acerto
+               (dir == sj2_secuencia[p][sj2_paso_esperado[p]]) ? "OK" : "FALLO");
 
         if (dir != sj2_secuencia[p][sj2_paso_esperado[p]]) {   // fallo de ESTE jugador (no afecta al otro)
             if ((uint8_t)(sj2_longitud[p] - 1) > sj2_mejor_racha[p]) sj2_mejor_racha[p] = (uint8_t)(sj2_longitud[p] - 1);   // actualiza la mejor racha de este jugador si corresponde
-            printf("[SIMONJOY 2P] P%u GAME OVER racha=%u mejor=%u\r\n", p, (unsigned)(sj2_longitud[p] - 1), sj2_mejor_racha[p]);
+            printf("[SIMONJOY 2P] P%u GAME OVER racha=%u mejor=%u\r\n", p, (unsigned)(sj2_longitud[p] - 1), sj2_mejor_racha[p]);   // log del game over con la racha final y la mejor historica de este jugador
             sj2_fase[p]            = SJ_GAMEOVER;   // SOLO este jugador pasa a game over, el otro sigue jugando su propia partida
-            sj2_tick_fase[p]       = ahora;
-            sj2_flash_pendiente[p] = 0xFF;
-            Buzzer_Beep(350);
+            sj2_tick_fase[p]       = ahora;   // marca el instante de entrada a game over de este jugador
+            sj2_flash_pendiente[p] = 0xFF;   // cancela cualquier prendido pendiente, game over dibuja otra pantalla encima
+            Buzzer_Beep(350);   // beep largo de error
             Renderer_DibujarGameOverJoystick2P(p, (uint16_t)(sj2_longitud[p] - 1), sj2_mejor_racha[p]);   // dibuja el resultado SOLO en la mitad de este jugador
-            break;
+            break;   // corta el case SJ_ESPERANDO aca, el fallo ya se manejo por completo
         }
 
         sj2_paso_esperado[p]++;   // acerto: avanza al siguiente paso esperado de este jugador
         if (sj2_paso_esperado[p] >= sj2_longitud[p]) {   // este jugador repitio TODA su secuencia
-            if (sj2_longitud[p] > sj2_mejor_racha[p]) sj2_mejor_racha[p] = sj2_longitud[p];
-            if (sj2_longitud[p] < SJ_MAX_LONGITUD) {
+            if (sj2_longitud[p] > sj2_mejor_racha[p]) sj2_mejor_racha[p] = sj2_longitud[p];   // actualiza la mejor racha de este jugador si corresponde
+            if (sj2_longitud[p] < SJ_MAX_LONGITUD) {   // todavia hay espacio en el arreglo para un paso mas
                 sj2_secuencia[p][sj2_longitud[p]] = SJ2_SiguienteDireccion(p);   // agrega un paso nuevo a la secuencia de ESTE jugador
-                sj2_longitud[p]++;
+                sj2_longitud[p]++;   // la secuencia de este jugador crece en 1
                 Renderer_ActualizarRachaJoystick2P(p, sj2_longitud[p]);   // actualiza el numero de ronda en la mitad de este jugador
             }
             sj2_fase[p]            = SJ_ACIERTO;   // pausa corta antes de repetir, solo para este jugador
-            sj2_tick_fase[p]       = ahora;
-            sj2_flash_pendiente[p] = 0xFF;
-            SimonJoy2_MostrarPaso(p, 0xFF);
+            sj2_tick_fase[p]       = ahora;   // marca el inicio de esa pausa
+            sj2_flash_pendiente[p] = 0xFF;   // cancela cualquier prendido pendiente
+            SimonJoy2_MostrarPaso(p, 0xFF);   // apaga el ultimo boton de este jugador antes de la pausa
             {
-                static const PasoSonido_t BEEP_RONDA[3] = {
+                static const PasoSonido_t BEEP_RONDA[3] = {   // jingle corto de ronda superada; cambiar estos numeros cambia el ritmo/tono
                     { BUZZER_TONO_HZ, 70 }, { 0, 60 }, { BUZZER_TONO_HZ, 70 }
                 };
                 Buzzer_Patron(BEEP_RONDA, 3);   // jingle corto de ronda superada (compartido, el buzzer es mono)
             }
         }
-        break;
+        break;   // cierra el case SJ_ESPERANDO
     }
 
-    case SJ_ACIERTO:
+    case SJ_ACIERTO:   // pausa corta de este jugador despues de completar una ronda
         if ((ahora - sj2_tick_fase[p]) < SJ_PAUSA_ACIERTO_MS) break;   // todavia no paso la pausa de este jugador
-        sj2_paso_mostrar[p] = 0;
-        sj2_mostrando_on[p] = 1;
-        sj2_tick_fase[p]    = ahora;
-        sj2_fase[p]         = SJ_MOSTRANDO;
+        sj2_paso_mostrar[p] = 0;   // reinicia el indice de reproduccion al primer paso
+        sj2_mostrando_on[p] = 1;   // arranca de nuevo en la sub-fase encendida
+        sj2_tick_fase[p]    = ahora;   // marca el inicio de la nueva reproduccion
+        sj2_fase[p]         = SJ_MOSTRANDO;   // vuelve a la fase de mostrar la secuencia (ahora mas larga)
         SimonJoy2_MostrarPaso(p, sj2_secuencia[p][0]);   // prende de una vez el primer paso de la nueva repeticion de ESTE jugador
-        break;
+        break;   // cierra el case SJ_ACIERTO
 
-    case SJ_GAMEOVER:
+    case SJ_GAMEOVER:   // esperando que ESTE jugador mueva su stick para reintentar (no afecta al otro)
         /* Al no existir un pulsador dedicado en el joystick, mover el
          * propio stick en cualquier direccion reinicia unicamente la
          * partida de ese jugador; la salida mediante B1 sigue disponible
          * para ambos lados y se maneja en el bucle principal. */
         if (Joystick2_LeerDireccion(p) != 0xFF) { printf("[SIMONJOY 2P] P%u retry\r\n", p); SimonJoy2_ReiniciarJugador(p); }   // solo el propio stick de este jugador lo reintenta, no afecta al otro
-        break;
+        break;   // cierra el case SJ_GAMEOVER
     }
 }
 
@@ -1659,18 +2124,18 @@ static void SimonJoy2_Actualizar(void) {   // tick de la partida 2 jugadores: ac
  * su propia secuencia de forma independiente en su propia mitad de la
  * pantalla. */
 
-static uint8_t        btn_secuencia[2][SJ_MAX_LONGITUD];
-static uint8_t        btn_longitud[2];
-static uint8_t        btn_paso_mostrar[2];
-static uint8_t        btn_paso_esperado[2];
-static uint8_t        btn_mostrando_on[2];
-static uint8_t        btn_paso_dibujado[2] = { 0xFF, 0xFF };
-static uint8_t        btn_mejor_racha[2];
-static SimonJoyFase_t btn_fase[2];
-static uint32_t       btn_tick_fase[2];
+static uint8_t        btn_secuencia[2][SJ_MAX_LONGITUD];   // secuencia de colores (0-3) de cada jugador de Botones, independiente entre si
+static uint8_t        btn_longitud[2];   // cuantos pasos tiene la secuencia de cada jugador
+static uint8_t        btn_paso_mostrar[2];   // indice del paso que se esta parpadeando, por jugador
+static uint8_t        btn_paso_esperado[2];   // indice del paso que se espera del jugador, por jugador
+static uint8_t        btn_mostrando_on[2];   // sub-fase del parpadeo (on/off), por jugador
+static uint8_t        btn_paso_dibujado[2] = { 0xFF, 0xFF };   // ultimo boton pintado/encendido de cada jugador (0xFF=ninguno)
+static uint8_t        btn_mejor_racha[2];   // mejor racha de la sesion, por jugador
+static SimonJoyFase_t btn_fase[2];   // fase actual de la maquina de estados de cada jugador
+static uint32_t       btn_tick_fase[2];   // tick de inicio de la fase actual, por jugador
 static uint32_t       btn_seed[2] = { 3, 11 };   /* semillas distintas de las de SJ2 */
-static uint8_t        btn_flash_pendiente[2] = { 0xFF, 0xFF };
-static uint32_t       btn_flash_tick[2];
+static uint8_t        btn_flash_pendiente[2] = { 0xFF, 0xFF };   // color pendiente de prender tras el apagon de confirmacion, por jugador
+static uint32_t       btn_flash_tick[2];   // tick del apagon de confirmacion, por jugador
 static uint8_t        en_juego_real_botones = 0;   /* 1 = modo BOTONES real (1 o 2 jugadores) */
 static uint8_t        en_juego_real_guitar = 0;    /* 1 = modo GUITAR HERO real (1 o 2 jugadores) */
 
@@ -1686,8 +2151,8 @@ static uint8_t        en_juego_real_guitar = 0;    /* 1 = modo GUITAR HERO real 
  * ambos modos. BTN_REARME_MIN_MS establece un tiempo de espera minimo entre
  * 2 entradas aceptadas de un mismo jugador, emulando artificialmente ese
  * freno. */
-#define BTN_REARME_MIN_MS 250U
-static uint32_t       btn_ultimo_input_tick[2];
+#define BTN_REARME_MIN_MS 250U   // ms minimos entre 2 entradas aceptadas de un mismo jugador de Botones; bajarlo permite golpear mas rapido pero acerca el ritmo al de un boton "instantaneo" sin freno
+static uint32_t       btn_ultimo_input_tick[2];   // tick de la ultima entrada aceptada, por jugador
 
 /* Cooldown equivalente al de arriba, pero propio de Guitar Hero (arreglo
  * separado de btn_ultimo_input_tick para no compartir estado con Simon con
@@ -1697,8 +2162,8 @@ static uint32_t       btn_ultimo_input_tick[2];
  * rapido -- asi que el freno es mucho mas corto que BTN_REARME_MIN_MS: solo
  * lo suficiente para no contar un rebote electrico del switch como 2
  * golpes distintos, sin notarse como demora para los dedos. */
-#define GH_REARME_MIN_MS 50U
-static uint32_t       gh_ultimo_input_tick[2];
+#define GH_REARME_MIN_MS 20U   // 20ms: Ultra rapido para detectar toques seguidos sin congelar los botones -- OJO: el loop principal corre a RENDER_TICK_MS=33ms, asi que en la practica el muestreo real nunca es mas fino que eso, bajar este numero por debajo de 33 no acelera mas alla del tick del loop
+static uint32_t       gh_ultimo_input_tick[2];   // tick de la ultima entrada aceptada de Guitar Hero, por jugador
 
 /* Tiempo de espera minimo en la pantalla de GAME OVER antes de aceptar un
  * reintento: sin este margen, un boton que rebota justo al perder la
@@ -1707,31 +2172,32 @@ static uint32_t       gh_ultimo_input_tick[2];
 #define BTN_GAMEOVER_COOLDOWN_MS 1000U   // milisegundos de espera obligatoria en game over antes de aceptar un boton como reintento; bajarlo permite reintentar mas rapido pero mas riesgo de reiniciar sin querer
 
 static uint8_t Botones_Random4(uint8_t p) {   // mismo LCG que SJ_Random4/SJ2_Random4 pero con la semilla propia de BOTONES del jugador p
-    btn_seed[p] = btn_seed[p] * 1103515245u + 12345u;
-    return (uint8_t)((btn_seed[p] >> 16) & 0x3u);
+    btn_seed[p] = btn_seed[p] * 1103515245u + 12345u;   // mismo LCG que el resto del proyecto, semilla propia de este jugador
+    return (uint8_t)((btn_seed[p] >> 16) & 0x3u);   // bits "del medio" recortados a 0-3
 }
 
 static uint8_t Botones_SiguienteColor(uint8_t p) {   // elige el proximo color de la secuencia del jugador p, evitando una 3ra repeticion seguida (mismo criterio que SJ_SiguienteDireccion)
-    uint8_t nuevo = Botones_Random4(p);
-    if (btn_longitud[p] >= 2 &&
-        btn_secuencia[p][btn_longitud[p] - 1] == btn_secuencia[p][btn_longitud[p] - 2] &&
-        nuevo == btn_secuencia[p][btn_longitud[p] - 1]) {
-        nuevo = (uint8_t)((nuevo + 1u + (Botones_Random4(p) % 3u)) & 0x3u);
+    uint8_t nuevo = Botones_Random4(p);   // candidato aleatorio inicial
+    if (btn_longitud[p] >= 2 &&   // solo puede haber 3ra repeticion si ya hay al menos 2 pasos previos
+        btn_secuencia[p][btn_longitud[p] - 1] == btn_secuencia[p][btn_longitud[p] - 2] &&   // los 2 ultimos colores ya son iguales entre si
+        nuevo == btn_secuencia[p][btn_longitud[p] - 1]) {   // Y el candidato tambien coincide (seria una 3ra repeticion)
+        nuevo = (uint8_t)((nuevo + 1u + (Botones_Random4(p) % 3u)) & 0x3u);   // fuerza un color distinto, elegido uniforme entre los otros 3
     }
-    return nuevo;
+    return nuevo;   // color final para el siguiente paso de la secuencia
 }
 
 static uint16_t Botones_IntervaloActual(uint8_t p) {   // misma formula de velocidad que SimonJoy, aplicada a la longitud de secuencia de BOTONES del jugador p
-    float velocidad = SJ_VELOCIDAD_INICIAL + (float)(btn_longitud[p] - 1) * SJ_VELOCIDAD_PASO;
-    if (velocidad > SJ_VELOCIDAD_MAX) velocidad = SJ_VELOCIDAD_MAX;
-    return (uint16_t)((float)SJ_INTERVALO_REF_MS / velocidad);
+    float velocidad = SJ_VELOCIDAD_INICIAL + (float)(btn_longitud[p] - 1) * SJ_VELOCIDAD_PASO;   // sube linealmente con la ronda, igual formula que SimonJoy_IntervaloActual
+    if (velocidad > SJ_VELOCIDAD_MAX) velocidad = SJ_VELOCIDAD_MAX;   // mismo tope maximo compartido con SimonJoy
+    return (uint16_t)((float)SJ_INTERVALO_REF_MS / velocidad);   // a mayor velocidad, menor intervalo
 }
 
 static void Botones_MostrarColor(uint8_t p, uint8_t nuevo) {   // cambia cual boton esta "encendido" en pantalla Y en el LED fisico real (nuevo=0-3, o 0xFF=ninguno)
     if (nuevo == btn_paso_dibujado[p]) return;   // ya esta asi, no hace nada
     if (btn_paso_dibujado[p] < 4) Boton_LED(p, btn_paso_dibujado[p], 0);   // apaga el LED fisico del boton que estaba prendido antes (si habia uno)
     if (nuevo < 4) Boton_LED(p, nuevo, 1);   // prende el LED fisico del nuevo boton (si corresponde prender alguno)
-    Renderer_UpdateModoSimonClasicoPaso(p, btn_paso_dibujado[p], nuevo);   // actualiza tambien el badge correspondiente en PANTALLA
+    if (btn_modo_1p) Renderer_UpdateModoSimonClasico1PPaso(btn_paso_dibujado[p], nuevo);   // layout de pantalla completa (1 jugador)
+    else             Renderer_UpdateModoSimonClasicoPaso(p, btn_paso_dibujado[p], nuevo);   // layout Cockpit dividido (2 jugadores)
     btn_paso_dibujado[p] = nuevo;   // guarda el nuevo estado pintado
     if (nuevo < 4) Buzzer_Beep(90);   // beep corto al prender un boton
 }
@@ -1743,187 +2209,245 @@ static void Botones_MostrarColor(uint8_t p, uint8_t nuevo) {   // cambia cual bo
 static void Botones_ConfirmarInput(uint8_t p, uint8_t color) {   // apaga YA el boton actual (LED + pantalla) y programa el prendido del nuevo color tras el apagon, igual criterio que SimonJoy2_ConfirmarInput
     if (btn_paso_dibujado[p] != 0xFF) {   // si habia algo prendido
         Boton_LED(p, btn_paso_dibujado[p], 0);   // apaga el LED fisico
-        Renderer_UpdateModoSimonClasicoPaso(p, btn_paso_dibujado[p], 0xFF);   // apaga el badge en pantalla
-        btn_paso_dibujado[p] = 0xFF;
+        if (btn_modo_1p) Renderer_UpdateModoSimonClasico1PPaso(btn_paso_dibujado[p], 0xFF);   // apaga el domo en el layout de pantalla completa
+        else             Renderer_UpdateModoSimonClasicoPaso(p, btn_paso_dibujado[p], 0xFF);   // apaga el badge en el layout Cockpit dividido
+        btn_paso_dibujado[p] = 0xFF;   // marca que este jugador no tiene nada pintado ahora
     }
     btn_flash_pendiente[p] = color;   // guarda que color prender despues del apagon
     btn_flash_tick[p]      = HAL_GetTick();   // marca el instante del apagon
-    Buzzer_Beep(90);
+    Buzzer_Beep(90);   // beep corto de confirmacion
 }
 
+/* Numero de ronda a pantalla completa (1 jugador) -- misma idea que
+ * SimonJoy_MostrarRacha, pero en RETRATO (240 de ancho, no LCD_W=320 que es
+ * el ancho de paisaje) y con el estilo de color de BOTONES (amarillo sobre
+ * gris oscuro, igual que Renderer_ActualizarRachaBotones). Redibuja solo la
+ * esquina, sin tocar el resto de la pantalla. */
+static void Botones_MostrarRacha1P(uint16_t racha) {   // redibuja solo el numero de ronda en la esquina, pantalla completa 1 jugador
+    char buf[12];   // buffer para el texto "RONDA:NN"
+    snprintf(buf, sizeof(buf), "RONDA:%2u", racha);   // ancho fijo de 2 digitos
+    Texto_Sanear(buf);   // defensivo, aca siempre son digitos
+    ILI9341_FillRect(240 - 80, 0, 80, 26, COLOR_DARKGRAY);   // borra solo el recuadro de la esquina superior derecha (ancho de RETRATO = 240)
+    ILI9341_DrawString(240 - 74, 9, buf, COLOR_YELLOW, COLOR_DARKGRAY, 1);   // dibuja el texto nuevo en amarillo sobre fondo gris oscuro
+}
+
+/* Pantalla de GAME OVER a pantalla completa (1 jugador) de BOTONES -- mismo
+ * patron que SimonJoy_DibujarGameOver, adaptado a retrato 240x320. */
+static void Botones_DibujarGameOver1P(uint16_t racha, uint16_t mejor) {   // dibuja la pantalla de GAME OVER a pantalla completa, 1 jugador
+    char linea[32];   // buffer temporal para armar cada linea con snprintf
+
+    /* NO tocar la orientacion aca: el modo 1 jugador de Botones se mantiene
+     * en retrato (240x320) durante TODA la partida (ver Botones_IniciarSolo),
+     * esta pantalla es solo el final, no un cambio de modo. Forzar paisaje
+     * giraba la pantalla fisica a mitad de partida sin motivo. */
+    ILI9341_FillScreen(COLOR_BLACK);   // borra toda la pantalla antes de dibujar el resultado
+
+    ILI9341_DrawString(30, 80, "GAME OVER", COLOR_RED, COLOR_BLACK, 3);   // titulo grande en rojo
+
+    snprintf(linea, sizeof(linea), "Racha: %u", (unsigned)racha);   // racha de ESTA partida
+    Texto_Sanear(linea);
+    ILI9341_DrawString(50, 140, linea, COLOR_WHITE, COLOR_BLACK, 2);
+
+    snprintf(linea, sizeof(linea), "Mejor: %u", (unsigned)mejor);   // mejor racha de TODA la sesion
+    Texto_Sanear(linea);
+    ILI9341_DrawString(50, 165, linea, COLOR_YELLOW, COLOR_BLACK, 2);
+
+    ILI9341_DrawString(10, 210, "V/A/AM=reintentar", COLOR_GRAY, COLOR_BLACK, 1);   // ROJO queda reservado para el atajo de salida (ver rojo_reservado en Botones_ActualizarJugador)
+    ILI9341_DrawString(10, 223, "ROJO 2s=menu de modos", COLOR_GRAY, COLOR_BLACK, 1);   // atajo de salida, ver SalirGameOver1P/2P_Detectado
+}
 static void Botones_ReiniciarJugador(uint8_t p) {   // reinicia SOLO al jugador p tras perder, sin tocar al otro
     btn_seed[p] ^= (HAL_GetTick() + p * 977u + 5u);   // remezcla la semilla de este jugador (offset 5, distinto al resto de las funciones "reiniciar/iniciar" para variar mas)
-    if (btn_seed[p] == 0) btn_seed[p] = 1;
+    if (btn_seed[p] == 0) btn_seed[p] = 1;   // evita semilla en 0
 
     btn_longitud[p]        = 1;   // secuencia nueva de 1 paso
     btn_secuencia[p][0]    = Botones_Random4(p);   // primer color aleatorio
-    btn_paso_mostrar[p]    = 0;
-    btn_mostrando_on[p]    = 1;
-    btn_fase[p]            = SJ_MOSTRANDO;
-    btn_tick_fase[p]       = HAL_GetTick();
-    btn_flash_pendiente[p] = 0xFF;
+    btn_paso_mostrar[p]    = 0;   // arranca mostrando desde el paso 0
+    btn_mostrando_on[p]    = 1;   // arranca en la mitad encendida del parpadeo
+    btn_fase[p]            = SJ_MOSTRANDO;   // arranca reproduciendo la secuencia
+    btn_tick_fase[p]       = HAL_GetTick();   // marca el inicio de esta fase
+    btn_flash_pendiente[p] = 0xFF;   // sin flash pendiente
     btn_ultimo_input_tick[p] = HAL_GetTick();   // reinicia el cooldown de entrada para este jugador
 
-    Renderer_DrawModoSimonClasicoJugador(p, btn_secuencia[p][0]);   // redibuja SOLO la mitad de este jugador
+    if (btn_modo_1p) {   // pantalla completa (1 jugador)
+        Renderer_DrawModoSimonClasico1P(btn_secuencia[p][0]);   // redibuja la pantalla completa (1 jugador)
+    } else {   // layout Cockpit dividido (2 jugadores)
+        Renderer_DrawModoSimonClasicoJugador(p, btn_secuencia[p][0]);   // redibuja SOLO la mitad de este jugador (Cockpit, 2 jugadores)
+    }
     Boton_LED(p, btn_secuencia[p][0], 1);   // prende el LED fisico del primer color de la nueva secuencia
-    btn_paso_dibujado[p] = btn_secuencia[p][0];
-    Renderer_ActualizarRachaBotones(p, btn_longitud[p]);   // actualiza el numero de ronda de este jugador
+    btn_paso_dibujado[p] = btn_secuencia[p][0];   // sincroniza el paso pintado
+    if (btn_modo_1p) Botones_MostrarRacha1P(btn_longitud[p]);
+    else             Renderer_ActualizarRachaBotones(p, btn_longitud[p]);   // actualiza el numero de ronda de este jugador
 }
 
 static void Botones_IniciarAmbos(void) {   // arranca una partida nueva de BOTONES a 2 jugadores, ambos lados desde cero
     Renderer_SetSimonClasicoInvertido(1);   // en 2 jugadores, ROJO<->AMARILLO y VERDE<->AZUL cambian de posicion en pantalla para coincidir con la disposicion fisica real de los botones (pedido explicito del usuario)
-    Buzzer_Fondo_Iniciar(CANCION_TETRIS_IDX);
-    ILI9341_SetPortrait(1);
+    Buzzer_Fondo_Iniciar(CANCION_TETRIS_IDX);   // musica de fondo compartida entre los 2 jugadores
+    ILI9341_SetPortrait(1);   // orientacion retrato (layout cara a cara)
     ILI9341_SetFlip180(1);   // aplica un giro de 180 grados en hardware para la orientacion de la mitad del jugador 2
     for (uint8_t p = 0; p < 2; p++) {   // inicializa el estado de ambos jugadores
         btn_seed[p] ^= (HAL_GetTick() + p * 977u + 2u);   // remezcla semilla (offset 2, distinto de ReiniciarJugador)
-        if (btn_seed[p] == 0) btn_seed[p] = 1;
+        if (btn_seed[p] == 0) btn_seed[p] = 1;   // evita semilla en 0
 
-        btn_longitud[p]        = 1;
-        btn_secuencia[p][0]    = Botones_Random4(p);
-        btn_paso_mostrar[p]    = 0;
-        btn_mostrando_on[p]    = 1;
-        btn_fase[p]            = SJ_MOSTRANDO;
-        btn_tick_fase[p]       = HAL_GetTick();
-        btn_flash_pendiente[p] = 0xFF;
-        btn_paso_dibujado[p]   = 0xFF;
-        btn_ultimo_input_tick[p] = HAL_GetTick();
+        btn_longitud[p]        = 1;   // secuencia nueva de 1 paso
+        btn_secuencia[p][0]    = Botones_Random4(p);   // primer color aleatorio
+        btn_paso_mostrar[p]    = 0;   // arranca mostrando desde el paso 0
+        btn_mostrando_on[p]    = 1;   // arranca en la mitad encendida del parpadeo
+        btn_fase[p]            = SJ_MOSTRANDO;   // arranca reproduciendo la secuencia
+        btn_tick_fase[p]       = HAL_GetTick();   // marca el inicio de esta fase
+        btn_flash_pendiente[p] = 0xFF;   // sin flash pendiente
+        btn_paso_dibujado[p]   = 0xFF;   // nada pintado todavia
+        btn_ultimo_input_tick[p] = HAL_GetTick();   // reinicia el cooldown de entrada de este jugador
         for (uint8_t c = 0; c < 4; c++) Boton_LED(p, c, 0);   // apaga los 4 LEDs de este jugador antes de arrancar (por si quedo alguno prendido de una partida anterior)
     }
     Renderer_DrawModoSimonClasico(btn_secuencia[0][0], btn_secuencia[1][0]);   // dibuja las 2 mitades completas de una vez
     Boton_LED(0, btn_secuencia[0][0], 1);   // prende el LED del primer color de jugador 0
     Boton_LED(1, btn_secuencia[1][0], 1);   // prende el LED del primer color de jugador 1
-    btn_paso_dibujado[0] = btn_secuencia[0][0];
-    btn_paso_dibujado[1] = btn_secuencia[1][0];
-    Renderer_ActualizarRachaBotones(0, btn_longitud[0]);
-    Renderer_ActualizarRachaBotones(1, btn_longitud[1]);
+    btn_paso_dibujado[0] = btn_secuencia[0][0];   // sincroniza el paso pintado de jugador 0
+    btn_paso_dibujado[1] = btn_secuencia[1][0];   // idem jugador 1
+    Renderer_ActualizarRachaBotones(0, btn_longitud[0]);   // numero de ronda inicial de jugador 0
+    Renderer_ActualizarRachaBotones(1, btn_longitud[1]);   // numero de ronda inicial de jugador 1
 }
 
-/* Arranca el modo de botones a 1 solo jugador (jugador logico 1) -- la
- * mitad del jugador 2 se deja en negro, apagada, y Botones_Actualizar()
- * nunca invoca Botones_ActualizarJugador(1) mientras btn_modo_1p este
+/* Arranca el modo de botones a 1 solo jugador (jugador logico 1) a PANTALLA
+ * COMPLETA (ver Renderer_DrawModoSimonClasico1P) -- btn_modo_1p ya debe
+ * estar en 1 antes de llamar a esta funcion (lo pone main() al confirmar
+ * "1 JUGADOR" en el menu), asi que Botones_ReiniciarJugador(1) mas abajo ya
+ * toma la rama de pantalla completa por si sola. Botones_Actualizar()
+ * nunca invoca Botones_ActualizarJugador(0) mientras btn_modo_1p este
  * activo (ver mas abajo). Reutiliza Botones_ReiniciarJugador(1), que ya
  * implementa exactamente esta inicializacion para el reintento tras un
  * game over. */
-static void Botones_IniciarSolo(void) {   // arranca el modo de botones a 1 solo jugador; la mitad del jugador 2 queda apagada y sin logica en ejecucion
+static void Botones_IniciarSolo(void) {   // arranca el modo de botones a 1 solo jugador, a pantalla completa
     Renderer_SetSimonClasicoInvertido(0);   // el modo de 1 jugador NO debe modificarse: siempre el layout historico, sin importar que haya quedado activo en una partida de 2 jugadores anterior
-    Buzzer_Fondo_Iniciar(CANCION_TETRIS_IDX);
-    ILI9341_SetPortrait(1);
-    /* No se aplica el giro de hardware en este modo: la transformacion de
-     * Cockpit_FillRect/DrawString/Punto (que orienta correctamente cada
-     * jugador en el modo de 2 jugadores) ya deja al jugador logico 0
-     * orientado hacia el lado opuesto de la mesa; sumar ademas el giro de
-     * hardware produciria una rotacion adicional de 180 grados no deseada. */
-    ILI9341_FillScreen(COLOR_BLACK);   // borra toda la pantalla (incluida la mitad del jugador 2, que se queda vacia)
+    Buzzer_Fondo_Iniciar(CANCION_TETRIS_IDX);   // musica de fondo
+    ILI9341_SetPortrait(1);   // orientacion retrato, se mantiene toda la partida
+    /* No se aplica el giro de hardware en este modo: la pantalla completa
+     * de 1 jugador se dibuja siempre "al derecho" (sin rotar), a diferencia
+     * del modo de 2 jugadores donde el giro orienta la mitad del jugador 2. */
     for (uint8_t c = 0; c < 4; c++) { Boton_LED(0, c, 0); Boton_LED(1, c, 0); }   // apaga los 8 LEDs (de ambos jugadores) antes de arrancar
-    Botones_ReiniciarJugador(1);   // reusa la logica de "reiniciar tras perder" para arrancar tambien la primera partida
+    Botones_ReiniciarJugador(1);   // reusa la logica de "reiniciar tras perder" para arrancar tambien la primera partida -- ya dibuja la pantalla completa nueva (ver mas arriba), no hace falta un FillScreen previo
 }
 
 static void Botones_ActualizarJugador(uint8_t p) {   // tick no bloqueante de UN jugador de BOTONES; misma estructura de maquina de estados que SimonJoy2_ActualizarJugador
-    uint32_t ahora = HAL_GetTick();
+    uint32_t ahora = HAL_GetTick();   // tick actual, usado en todas las fases
 
-    if (btn_flash_pendiente[p] != 0xFF && (ahora - btn_flash_tick[p]) >= SJ_FLASH_INPUT_MS) {
-        Botones_MostrarColor(p, btn_flash_pendiente[p]);
-        btn_flash_pendiente[p] = 0xFF;
+    if (btn_flash_pendiente[p] != 0xFF && (ahora - btn_flash_tick[p]) >= SJ_FLASH_INPUT_MS) {   // hay un prendido pendiente de este jugador y ya paso el tiempo minimo
+        Botones_MostrarColor(p, btn_flash_pendiente[p]);   // prende el color confirmado
+        btn_flash_pendiente[p] = 0xFF;   // consume el pendiente
     }
 
-    switch (btn_fase[p]) {
-    case SJ_MOSTRANDO: {
-        uint16_t medio = (uint16_t)(Botones_IntervaloActual(p) / 2U);
-        if ((ahora - btn_tick_fase[p]) < medio) break;
-        btn_tick_fase[p] = ahora;
+    switch (btn_fase[p]) {   // logica de la fase actual de ESTE jugador (independiente del otro)
+    case SJ_MOSTRANDO: {   // reproduciendo la secuencia de ESTE jugador
+        uint16_t medio = (uint16_t)(Botones_IntervaloActual(p) / 2U);   // mitad del intervalo actual de este jugador
+        if ((ahora - btn_tick_fase[p]) < medio) break;   // todavia no toca cambiar de sub-fase
+        btn_tick_fase[p] = ahora;   // marca el inicio de la nueva sub-fase
 
-        if (btn_mostrando_on[p]) {
+        if (btn_mostrando_on[p]) {   // estaba encendido -- toca apagar
             Botones_MostrarColor(p, 0xFF);
             btn_mostrando_on[p] = 0;
-        } else {
+        } else {   // estaba apagado -- toca avanzar de paso
             btn_paso_mostrar[p]++;
-            if (btn_paso_mostrar[p] >= btn_longitud[p]) {
+            if (btn_paso_mostrar[p] >= btn_longitud[p]) {   // ya mostro toda su secuencia
                 btn_fase[p]          = SJ_ESPERANDO;
                 btn_paso_esperado[p] = 0;
-            } else {
+            } else {   // todavia quedan pasos por mostrar
                 Botones_MostrarColor(p, btn_secuencia[p][btn_paso_mostrar[p]]);
                 btn_mostrando_on[p] = 1;
             }
         }
-        break;
+        break;   // cierra el case SJ_MOSTRANDO
     }
 
-    case SJ_ESPERANDO: {
+    case SJ_ESPERANDO: {   // esperando la respuesta de ESTE jugador
         uint8_t color = Botones_LeerColor(p);   // intenta leer un flanco de boton de este jugador
         if (color == 0xFF) break;   // nada presionado este tick
         if ((ahora - btn_ultimo_input_tick[p]) < BTN_REARME_MIN_MS) break;  /* cooldown: ver BTN_REARME_MIN_MS */
         btn_ultimo_input_tick[p] = ahora;   // marca el instante de esta entrada aceptada, para el cooldown de la proxima
 
-        Botones_ConfirmarInput(p, color);
-        printf("[BOTONES] P%u color=%u esperado=%u %s\r\n", p, color, btn_secuencia[p][btn_paso_esperado[p]],
+        Botones_ConfirmarInput(p, color);   // parpadeo real de confirmacion, aunque se repita el mismo color
+        printf("[BOTONES] P%u color=%u esperado=%u %s\r\n", p, color, btn_secuencia[p][btn_paso_esperado[p]],   // log de la entrada: que se leyo, que se esperaba, acierto o fallo
                (color == btn_secuencia[p][btn_paso_esperado[p]]) ? "OK" : "FALLO");
 
         if (color != btn_secuencia[p][btn_paso_esperado[p]]) {   // fallo de este jugador
-            if ((uint8_t)(btn_longitud[p] - 1) > btn_mejor_racha[p]) btn_mejor_racha[p] = (uint8_t)(btn_longitud[p] - 1);
+            if ((uint8_t)(btn_longitud[p] - 1) > btn_mejor_racha[p]) btn_mejor_racha[p] = (uint8_t)(btn_longitud[p] - 1);   // actualiza la mejor racha si corresponde
             printf("[BOTONES] P%u GAME OVER racha=%u mejor=%u\r\n", p, (unsigned)(btn_longitud[p] - 1), btn_mejor_racha[p]);
-            btn_fase[p]            = SJ_GAMEOVER;
-            btn_tick_fase[p]       = ahora;
-            btn_flash_pendiente[p] = 0xFF;
+            btn_fase[p]            = SJ_GAMEOVER;   // pasa a la fase de game over
+            btn_tick_fase[p]       = ahora;   // marca el instante de entrada a game over
+            btn_flash_pendiente[p] = 0xFF;   // cancela cualquier prendido pendiente
             for (uint8_t c = 0; c < 4; c++) Boton_LED(p, c, 0);   // apaga los 4 LEDs de este jugador al perder
-            Buzzer_Beep(350);
-            Renderer_DibujarGameOverBotones(p, (uint16_t)(btn_longitud[p] - 1), btn_mejor_racha[p]);
-            break;
+            Buzzer_Beep(350);   // beep largo de error
+            if (btn_modo_1p) Botones_DibujarGameOver1P((uint16_t)(btn_longitud[p] - 1), btn_mejor_racha[p]);
+            else             Renderer_DibujarGameOverBotones(p, (uint16_t)(btn_longitud[p] - 1), btn_mejor_racha[p]);
+            break;   // corta el case aca, el fallo ya se manejo por completo
         }
 
-        btn_paso_esperado[p]++;
+        btn_paso_esperado[p]++;   // acerto: avanza al siguiente paso esperado
         if (btn_paso_esperado[p] >= btn_longitud[p]) {   // este jugador completo toda su secuencia
-            if (btn_longitud[p] > btn_mejor_racha[p]) btn_mejor_racha[p] = btn_longitud[p];
-            if (btn_longitud[p] < SJ_MAX_LONGITUD) {
-                btn_secuencia[p][btn_longitud[p]] = Botones_SiguienteColor(p);
-                btn_longitud[p]++;
-                Renderer_ActualizarRachaBotones(p, btn_longitud[p]);
+            if (btn_longitud[p] > btn_mejor_racha[p]) btn_mejor_racha[p] = btn_longitud[p];   // actualiza la mejor racha si corresponde
+            if (btn_longitud[p] < SJ_MAX_LONGITUD) {   // todavia hay espacio en el arreglo
+                btn_secuencia[p][btn_longitud[p]] = Botones_SiguienteColor(p);   // agrega un color nuevo a la secuencia
+                btn_longitud[p]++;   // la secuencia crece en 1
+                if (btn_modo_1p) Botones_MostrarRacha1P(btn_longitud[p]);
+                else             Renderer_ActualizarRachaBotones(p, btn_longitud[p]);
             }
-            btn_fase[p]            = SJ_ACIERTO;
-            btn_tick_fase[p]       = ahora;
-            btn_flash_pendiente[p] = 0xFF;
-            Botones_MostrarColor(p, 0xFF);
+            btn_fase[p]            = SJ_ACIERTO;   // pausa corta antes de repetir
+            btn_tick_fase[p]       = ahora;   // marca el inicio de esa pausa
+            btn_flash_pendiente[p] = 0xFF;   // cancela cualquier prendido pendiente
+            Botones_MostrarColor(p, 0xFF);   // apaga el ultimo boton antes de la pausa
             {
-                static const PasoSonido_t BEEP_RONDA[3] = {
+                static const PasoSonido_t BEEP_RONDA[3] = {   // jingle corto de ronda superada
                     { BUZZER_TONO_HZ, 70 }, { 0, 60 }, { BUZZER_TONO_HZ, 70 }
                 };
-                Buzzer_Patron(BEEP_RONDA, 3);
+                Buzzer_Patron(BEEP_RONDA, 3);   // suena el jingle
             }
         }
-        break;
+        break;   // cierra el case SJ_ESPERANDO
     }
 
-    case SJ_ACIERTO:
-        if ((ahora - btn_tick_fase[p]) < SJ_PAUSA_ACIERTO_MS) break;
-        btn_paso_mostrar[p] = 0;
-        btn_mostrando_on[p] = 1;
-        btn_tick_fase[p]    = ahora;
-        btn_fase[p]         = SJ_MOSTRANDO;
-        Botones_MostrarColor(p, btn_secuencia[p][0]);
-        break;
+    case SJ_ACIERTO:   // pausa corta de este jugador despues de completar una ronda
+        if ((ahora - btn_tick_fase[p]) < SJ_PAUSA_ACIERTO_MS) break;   // todavia no paso la pausa
+        btn_paso_mostrar[p] = 0;   // reinicia el indice de reproduccion
+        btn_mostrando_on[p] = 1;   // arranca de nuevo encendido
+        btn_tick_fase[p]    = ahora;   // marca el inicio de la nueva reproduccion
+        btn_fase[p]         = SJ_MOSTRANDO;   // vuelve a la fase de mostrar (ahora mas larga)
+        Botones_MostrarColor(p, btn_secuencia[p][0]);   // prende de una vez el primer paso de la nueva repeticion
+        break;   // cierra el case SJ_ACIERTO
 
-    case SJ_GAMEOVER: {
+    case SJ_GAMEOVER: {   // esperando que ESTE jugador reintente (o el atajo de ROJO 2s)
         /* No existe un boton de confirmacion separado: cualquiera de los
          * botones propios del jugador reinicia la partida, siempre que ya
          * haya transcurrido BTN_GAMEOVER_COOLDOWN_MS. Botones_LeerColor
          * debe invocarse en cada ciclo, independientemente de si el
          * cooldown ya se cumplio, para que su logica interna de antirrebote
-         * no pierda sincronizacion. */
+         * no pierda sincronizacion.
+         *
+         * ROJO queda RESERVADO para el atajo de salida por sostenido de 2s
+         * (ver SalirGameOver1P_Detectado/SalirGameOver2P_Detectado) siempre
+         * que ese atajo pueda estar corriendo AHORA: en 1 jugador, todo el
+         * tiempo; en 2 jugadores, solo una vez que el OTRO jugador tambien
+         * termino (si el otro sigue jugando, el atajo 2P no aplica todavia,
+         * asi que ROJO debe seguir reiniciando normal para no dejar a este
+         * jugador sin forma de reintentar). Si no se reservara en el
+         * momento correcto, la propia pulsacion de ROJO cambiaria
+         * btn_fase[p] fuera de SJ_GAMEOVER antes de llegar a los 2s, y el
+         * atajo nunca se alcanzaria a disparar. Los otros 3 colores siguen
+         * reiniciando al toque como siempre. */
         uint8_t color = Botones_LeerColor(p);   // se invoca siempre, haya pasado o no el cooldown (ver el comentario anterior)
-        if (color != 0xFF && (ahora - btn_tick_fase[p]) >= BTN_GAMEOVER_COOLDOWN_MS) {   // hubo un boton Y ya paso el cooldown minimo de game over
+        uint8_t rojo_reservado = (color == 0) && (btn_modo_1p || btn_fase[p ^ 1] == SJ_GAMEOVER);   // ROJO reservado si es 1 jugador, o si en 2 jugadores el otro ya termino tambien
+        if (color != 0xFF && !rojo_reservado && (ahora - btn_tick_fase[p]) >= BTN_GAMEOVER_COOLDOWN_MS) {   // hubo un boton (valido) Y ya paso el cooldown minimo de game over
             printf("[BOTONES] P%u retry\r\n", p);
             Botones_ReiniciarJugador(p);
         }
-        break;
+        break;   // cierra el case SJ_GAMEOVER
     }
-    }
+    }   // cierra el switch(btn_fase[p])
 }
 
-static void Botones_Actualizar(void) {
-    if (btn_modo_1p) {
+static void Botones_Actualizar(void) {   // tick de BOTONES: en 1 jugador actualiza solo el jugador logico 1, en 2 jugadores actualiza a ambos
+    if (btn_modo_1p) {   // 1 jugador: solo existe estado real para el jugador logico 1
         // En modo de 1 Jugador, actualiza SOLO al jugador de arriba (lógico 1)
         Botones_ActualizarJugador(1);
-    } else {
+    } else {   // 2 jugadores: cada uno se actualiza por separado, sin depender del otro
         // En modo de 2 Jugadores, actualiza a ambos lados de forma independiente
         Botones_ActualizarJugador(0);
         Botones_ActualizarJugador(1);
@@ -1953,31 +2477,33 @@ static void Botones_Actualizar(void) {
  * la partida en curso del otro jugador (mismo patron de reintento aplicado
  * en Simon Clasico y Simon + Joystick). */
 
-#define GH_NOTA_BASE(p)     ((uint8_t)((p) * (MAX_NOTES / 2)))
-#define GH_NOTAS_POR_JUG    (MAX_NOTES / 2)
-#define GH_SPAWN_MS         SPAWN_INTERVAL_L2
+#define GH_NOTA_BASE(p)     ((uint8_t)((p) * (MAX_NOTES / 2)))   // indice base del arreglo gs.notas donde arranca la mitad de un jugador (0 para p=0, MAX_NOTES/2 para p=1); depende de MAX_NOTES en game_state.h
+#define GH_NOTAS_POR_JUG    (MAX_NOTES / 2)   // cuantos slots de nota tiene cada jugador -- subir MAX_NOTES en game_state.h permite mas notas simultaneas en pantalla por jugador
 
 static uint32_t gh_seed[2]      = { 5, 13 };   // semillas del LCG de Guitar Hero, independientes de SimonJoy/Botones
 static uint8_t  gh_terminado[2] = { 0, 0 };   // 1 = este jugador ya completo su ronda de NOTES_PER_GAME notas y esta esperando reintentar
 
-/* Notas sostenidas ("quemar"): gh_sosteniendo[p] guarda el INDICE (dentro de
- * la mitad de notas de este jugador, 0..GH_NOTAS_POR_JUG-1) de la nota que
- * se esta sosteniendo ahora mismo, o -1 si ninguna. Solo puede haber una a
- * la vez por jugador (si hay una en curso, no se evaluan golpes nuevos, ver
- * GuitarHero_ActualizarJugador). gh_sostener_desde marca el tick en que
- * arranco ese sostenido, para medir cuanto tiempo lleva. */
-static int8_t   gh_sosteniendo[2]     = { -1, -1 };
-static uint32_t gh_sostener_desde[2];
+/* Dificultad elegida en DEMO_MENU_DIFICULTAD (dificultad_cursor, 0-2): fija
+ * la velocidad de caida y el intervalo de spawn de TODA la sesion de
+ * Guitar Hero -- ninguno de los 2 cambia mientras se juega ni entre
+ * reintentos individuales (pedido explicito del usuario: si se elige
+ * FACIL, se queda en FACIL toda la partida, sin subir sola a mitad de
+ * ronda). Para cambiar de dificultad hay que salir de la partida (ver
+ * atajo AZUL 2s, GH_BotonSostenidoDetectado mas abajo) y volver a elegir. */
+static const uint8_t  GH_SPEED_POR_NIVEL[3] = { NOTE_SPEED_L1, NOTE_SPEED_L2, NOTE_SPEED_L3 };   // velocidad de caida por nivel (indice = dificultad_cursor); agregar un 4to nivel implica agrandar este arreglo Y el menu de dificultad
+static const uint16_t GH_SPAWN_POR_NIVEL[3] = { SPAWN_INTERVAL_L1, SPAWN_INTERVAL_L2, SPAWN_INTERVAL_L3 };   // intervalo de spawn por nivel, mismo indice
+static uint8_t  gh_speed_base = NOTE_SPEED_L2;   // velocidad fija de la sesion actual, segun la dificultad elegida -- no crece
+static uint16_t gh_spawn_ms   = SPAWN_INTERVAL_L2;   // intervalo de spawn fijo de la sesion actual, segun la dificultad elegida -- no crece
 
 static uint8_t GH_Random4(uint8_t p) {   // mismo LCG que los otros modos, aplicado a la semilla de Guitar Hero del jugador p
-    gh_seed[p] = gh_seed[p] * 1103515245u + 12345u;
-    return (uint8_t)((gh_seed[p] >> 16) & 0x3u);
+    gh_seed[p] = gh_seed[p] * 1103515245u + 12345u;   // mismo LCG que el resto del proyecto
+    return (uint8_t)((gh_seed[p] >> 16) & 0x3u);   // bits del medio recortados a 0-3
 }
 
 /* Inicia (o reinicia) unicamente al jugador p, sin afectar la mitad del otro. */
 static void GuitarHero_ReiniciarJugador(uint8_t p) {   // resetea el puntaje, combo y notas de un jugador, y redibuja unicamente su mitad
     gh_seed[p] ^= (HAL_GetTick() + p * 977u + 9u);   // remezcla la semilla de este jugador
-    if (gh_seed[p] == 0) gh_seed[p] = 1;
+    if (gh_seed[p] == 0) gh_seed[p] = 1;   // evita semilla en 0
 
     gs.j[p].puntaje           = 0;   // puntaje en 0 al arrancar/reiniciar
     gs.j[p].combo             = 0;   // combo en 0
@@ -1986,38 +2512,47 @@ static void GuitarHero_ReiniciarJugador(uint8_t p) {   // resetea el puntaje, co
     gh_ultimo_input_tick[p]  = HAL_GetTick();   // reinicia el cooldown de entrada de este jugador (ver GH_REARME_MIN_MS)
     for (uint8_t i = 0; i < GH_NOTAS_POR_JUG; i++) gs.notas[GH_NOTA_BASE(p) + i].activa = 0;   // desactiva todas las notas de la mitad de este jugador (limpia notas viejas de la partida anterior)
     gh_terminado[p]    = 0;   // ya no esta "terminado", arranca una ronda nueva
-    gh_sosteniendo[p]  = -1;   // ninguna nota sostenida en curso (una partida anterior no debe dejar una "colgada")
 
-    Renderer_DrawModoGuitarHeroJugador(p);   // redibuja SOLO la mitad de pantalla de este jugador (carril, zona de golpe, encabezado)
-    Renderer_GH_ActualizarPuntaje(p, 0, 0);   // muestra puntaje/combo en 0
+    if (guitar_modo_1p) {   // pantalla completa (1 jugador)
+        Renderer_DrawModoGuitarHero1P();       // pantalla completa (1 jugador)
+        Renderer_GH1P_ActualizarPuntaje(0, 0);   // muestra puntaje/combo en 0
+    } else {   // layout Cockpit dividido (2 jugadores)
+        Renderer_DrawModoGuitarHeroJugador(p);   // redibuja SOLO la mitad de pantalla de este jugador (carril, zona de golpe, encabezado)
+        Renderer_GH_ActualizarPuntaje(p, 0, 0);   // muestra puntaje/combo en 0
+    }
 }
 
 /* Dibuja ambas mitades de la pantalla desde cero (arranque de una partida nueva a 2 jugadores). */
 static void GuitarHero2_IniciarAmbos(void) {   // arranca una partida nueva de Guitar Hero a 2 jugadores, ambos lados desde cero
     Buzzer_Fondo_Iniciar(cancion_cursor);   // cancion elegida por los jugadores en DEMO_MENU_CANCIONES (unico paso previo a Guitar Hero, ver MenuCanciones_Procesar); a partir de que esa cancion complete una vuelta, Buzzer_Fondo_RotarSiTermino sigue variando sola
-    ILI9341_SetPortrait(1);
+    ILI9341_SetPortrait(1);   // orientacion retrato, se mantiene toda la partida
     ILI9341_SetFlip180(1);   // aplica un giro de 180 grados en hardware para la orientacion de la mitad del jugador 2
-    gs.nota_speed = NOTE_SPEED_L2;   // velocidad de caida de notas de este modo real (no confundir con el recorrido de diseño DEMO_JUGANDO)
+    gh_speed_base = GH_SPEED_POR_NIVEL[dificultad_cursor];   // velocidad y spawn FIJOS de toda la sesion, segun la dificultad elegida en DEMO_MENU_DIFICULTAD
+    gh_spawn_ms   = GH_SPAWN_POR_NIVEL[dificultad_cursor];   // idem para el intervalo de spawn
+    gs.nota_speed = gh_speed_base;   // velocidad de caida de notas de este modo real (no confundir con el recorrido de diseño DEMO_JUGANDO)
     memset(gs.notas, 0, sizeof(gs.notas));   // limpia TODO el arreglo de notas (ambos jugadores) antes de arrancar
     Renderer_DrawModoGuitarHero2P();   // dibuja el layout completo de las 2 mitades (carriles, zonas de golpe, encabezados)
     GuitarHero_ReiniciarJugador(0);   // inicializa el estado de jugador 0
     GuitarHero_ReiniciarJugador(1);   // inicializa el estado de jugador 1
 }
 
-/* Arranca Guitar Hero a 1 solo jugador (jugador logico 1) -- la mitad del
- * jugador 2 se deja en negro, apagada, siguiendo el mismo patron que
- * Botones_IniciarSolo. Tampoco se aplica el giro de hardware en este modo,
- * por el mismo motivo explicado en Botones_IniciarSolo: la transformacion
- * de Cockpit_FillRect/DrawString/Punto ya orienta correctamente al jugador
- * logico 0 hacia el lado opuesto, y sumar el giro de hardware produciria
- * una rotacion adicional no deseada. */
-static void GuitarHero_IniciarSolo(void) {   // arranca Guitar Hero a 1 solo jugador; la mitad del jugador 2 queda apagada
+/* Arranca Guitar Hero a 1 solo jugador (jugador logico 1) a PANTALLA
+ * COMPLETA (ver Renderer_DrawModoGuitarHero1P), siguiendo el mismo patron
+ * que Botones_IniciarSolo -- guitar_modo_1p ya debe estar en 1 antes de
+ * llamar a esta funcion (lo pone main() al confirmar "1 JUGADOR"), asi que
+ * GuitarHero_ReiniciarJugador(1) mas abajo ya toma la rama de pantalla
+ * completa por si sola. Tampoco se aplica el giro de hardware en este modo:
+ * la pantalla completa de 1 jugador se dibuja siempre "al derecho" (sin
+ * rotar), a diferencia del modo de 2 jugadores donde el giro orienta la
+ * mitad del jugador 2. */
+static void GuitarHero_IniciarSolo(void) {   // arranca Guitar Hero a 1 solo jugador, a pantalla completa
     Buzzer_Fondo_Iniciar(cancion_cursor);   // misma cancion elegida en DEMO_MENU_CANCIONES, ver GuitarHero2_IniciarAmbos
-    ILI9341_SetPortrait(1);
-    ILI9341_FillScreen(COLOR_BLACK);   // borra toda la pantalla, incluida la mitad del jugador 2 (que queda vacia)
-    gs.nota_speed = NOTE_SPEED_L2;
+    ILI9341_SetPortrait(1);   // orientacion retrato, se mantiene toda la partida
+    gh_speed_base = GH_SPEED_POR_NIVEL[dificultad_cursor];   // velocidad y spawn FIJOS de toda la sesion, segun la dificultad elegida en DEMO_MENU_DIFICULTAD
+    gh_spawn_ms   = GH_SPAWN_POR_NIVEL[dificultad_cursor];   // idem para el intervalo de spawn
+    gs.nota_speed = gh_speed_base;   // velocidad de caida de notas de este modo real
     memset(gs.notas, 0, sizeof(gs.notas));   // limpia todas las notas antes de arrancar
-    GuitarHero_ReiniciarJugador(1);
+    GuitarHero_ReiniciarJugador(1);   // ya dibuja la pantalla completa nueva (ver mas arriba), no hace falta un FillScreen previo
 }
 
 static void GuitarHero_ActualizarJugador(uint8_t p) {   // tick no bloqueante de UN jugador de Guitar Hero: spawnea notas, lee golpes, mueve/dibuja notas y detecta fin de ronda
@@ -2025,10 +2560,13 @@ static void GuitarHero_ActualizarJugador(uint8_t p) {   // tick no bloqueante de
      * ver Renderer_GH_FlashZona/ActualizarFlashes en renderer.c, esto le da
      * exactamente 1 frame (~33ms) de blanco antes de volver a su estilo
      * normal de "blanco/diana". */
-    Renderer_GH_ActualizarFlashes(p);
+    if (guitar_modo_1p) Renderer_GH1P_ActualizarFlashes();   // pantalla completa
+    else                 Renderer_GH_ActualizarFlashes(p);   // Cockpit dividido
 
     if (gh_terminado[p]) {   // este jugador ya termino su ronda de NOTES_PER_GAME notas, esta esperando a que reintente
-        if (Botones_LeerColor(p) != 0xFF) {   // cualquiera de sus 4 botones arranca una ronda nueva
+        uint8_t color = Botones_LeerColor(p);   // cualquiera de sus 4 botones arranca una ronda nueva...
+        uint8_t rojo_reservado = (color == 0) && (guitar_modo_1p || gh_terminado[p ^ 1]);   // ...salvo ROJO, reservado para el atajo de salida por sostenido de 2s (ver Botones_ActualizarJugador para el mismo criterio en detalle)
+        if (color != 0xFF && !rojo_reservado) {   // hubo un boton (valido) que arranca una ronda nueva
             printf("[GUITARHERO] P%u nueva ronda\r\n", p);
             GuitarHero_ReiniciarJugador(p);
         }
@@ -2038,10 +2576,12 @@ static void GuitarHero_ActualizarJugador(uint8_t p) {   // tick no bloqueante de
     uint32_t ahora = HAL_GetTick();
     uint8_t  base  = GH_NOTA_BASE(p);   // indice base del arreglo gs.notas donde arranca la mitad de este jugador (0 para p=0, MAX_NOTES/2 para p=1)
 
-    /* Spawn periodico -- una nota nueva cada GH_SPAWN_MS mientras queden
-     * cupos en la ronda (NOTES_PER_GAME) y un slot libre en la mitad de p. */
-    if (gs.j[p].notas_spawneadas < NOTES_PER_GAME &&
-        (ahora - gs.j[p].tick_ultimo_spawn) >= GH_SPAWN_MS) {   // todavia no se generaron todas las notas de la ronda Y ya paso el intervalo de spawn
+    /* Spawn periodico -- una nota nueva cada gh_spawn_ms (fijado por la
+     * dificultad elegida, ver GuitarHero_IniciarSolo/2_IniciarAmbos)
+     * mientras queden cupos en la ronda (NOTES_PER_GAME) y un slot libre en
+     * la mitad de p. */
+    if (gs.j[p].notas_spawneadas < NOTES_PER_GAME &&   // todavia quedan notas por generar en esta ronda
+        (ahora - gs.j[p].tick_ultimo_spawn) >= gh_spawn_ms) {   // Y ya paso el intervalo de spawn
         for (uint8_t i = 0; i < GH_NOTAS_POR_JUG; i++) {   // busca el primer slot LIBRE (no activo) en la mitad de este jugador
             Nota_t *n = &gs.notas[base + i];
             if (n->activa) continue;   // este slot ya esta ocupado por otra nota, prueba el siguiente
@@ -2049,7 +2589,6 @@ static void GuitarHero_ActualizarJugador(uint8_t p) {   // tick no bloqueante de
             n->jugador   = p;   // marca a que jugador pertenece
             n->x_rel     = COCKPIT_ZONE_W;   // nace justo en el borde derecho de la zona de juego de este jugador
             n->x_prev    = n->x_rel;   // posicion previa igual a la actual, para que el primer borrado de "estela" no borre nada de mas
-            n->sostenida = (GH_Random4(p) == 0);   // ~1 de cada 4 notas es "sostenida" (hay que mantenerla, ver GH_SOSTENIDA_DURACION_MS), el resto son de golpe instantaneo como siempre
             n->activa    = 1;   // la marca como activa/en juego
             gs.j[p].notas_spawneadas++;   // cuenta una nota mas generada en esta ronda
             gs.j[p].tick_ultimo_spawn = ahora;   // reinicia el cronometro del proximo spawn
@@ -2057,53 +2596,15 @@ static void GuitarHero_ActualizarJugador(uint8_t p) {   // tick no bloqueante de
         }
     }
 
-    /* Nota sostenida en curso: se maneja SIEMPRE primero (aunque este tick
-     * tambien traiga un flanco de boton nuevo, ver el guard gh_sosteniendo[p]
-     * < 0 mas abajo) porque necesita nivel (Botones_ColorSostenido), no
-     * flanco -- mientras se mantiene el mismo boton apretado, Botones_LeerColor
-     * no vuelve a devolver un flanco para el. El puntaje se acredita
-     * PROPORCIONAL al tiempo sostenido (SCORE_SOSTENIDA_POR_SEG por segundo),
-     * asi que soltar antes de tiempo igual paga lo alcanzado a sostener, no
-     * es todo o nada. */
-    if (gh_sosteniendo[p] >= 0) {
-        Nota_t  *n            = &gs.notas[base + gh_sosteniendo[p]];
-        uint32_t sostenido_ms = ahora - gh_sostener_desde[p];   // cuanto lleva sosteniendose esta nota
-        uint8_t  completa     = (sostenido_ms >= GH_SOSTENIDA_DURACION_MS);
-        if (!n->activa || (!completa && !Botones_ColorSostenido(p, n->carril))) {   // se solto antes de tiempo (o la nota se desactivo por otro motivo)
-            if (sostenido_ms > GH_SOSTENIDA_DURACION_MS) sostenido_ms = GH_SOSTENIDA_DURACION_MS;   // no pagar de mas si este tick llego tarde
-            uint16_t bonus = (uint16_t)((sostenido_ms * SCORE_SOSTENIDA_POR_SEG) / 1000U);   // proporcional al tiempo realmente sostenido
-            gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + bonus);
-            gs.j[p].combo   = 0;   /* se corto antes de completarla -- corta combo, igual que un golpe fallado */
-            n->activa       = 0;
-            Renderer_GH_TerminarSostenida(p, n->carril);
-            printf("[GUITARHERO] P%u sostenida CORTADA a %ums bonus=%u puntaje=%u\r\n",
-                   p, (unsigned)sostenido_ms, bonus, gs.j[p].puntaje);
-            gh_sosteniendo[p] = -1;
-        } else if (completa) {   // se mantuvo presionado todo GH_SOSTENIDA_DURACION_MS
-            uint16_t bonus = (uint16_t)((GH_SOSTENIDA_DURACION_MS * SCORE_SOSTENIDA_POR_SEG) / 1000U);
-            gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + bonus);
-            gs.j[p].combo++;   // sostenida completa cuenta como acierto para el combo
-            n->activa = 0;
-            Buzzer_Beep(120);   // beep mas largo que el golpe instantaneo, distingue la sostenida completa
-            Renderer_GH_TerminarSostenida(p, n->carril);
-            printf("[GUITARHERO] P%u sostenida COMPLETA bonus=%u puntaje=%u combo=%u\r\n",
-                   p, bonus, gs.j[p].puntaje, gs.j[p].combo);
-            gh_sosteniendo[p] = -1;
-        } else {   // todavia en curso, sigue presionado y no llego a los 2s
-            Renderer_GH_DrawNotaSostenida(p, n, (uint8_t)((sostenido_ms * 100U) / GH_SOSTENIDA_DURACION_MS));
-        }
-    }
-
     /* Input: el color propio del jugador caza la nota mas cercana de ESE
      * carril (no la mas cercana de cualquier color, a diferencia de la
-     * maqueta original de 1 solo boton). Si ya hay una nota sosteniendose
-     * (ver arriba), no se evaluan golpes nuevos hasta que termine -- solo
-     * puede sostenerse una a la vez por jugador. */
+     * maqueta original de 1 solo boton). Todas las notas se golpean al
+     * toque (sin mantener presionado). */
     uint8_t color = Botones_LeerColor(p);   // intenta leer un flanco de boton de este jugador (SIEMPRE se llama, cooldown o no, para no desincronizar su antirrebote interno -- mismo criterio que el game over de Botones_ActualizarJugador)
-    if (gh_sosteniendo[p] < 0 && color != 0xFF && (ahora - gh_ultimo_input_tick[p]) >= GH_REARME_MIN_MS) {   // presiono algun boton este tick Y ya paso el cooldown corto de Guitar Hero (ver GH_REARME_MIN_MS)
+    if (color != 0xFF && (ahora - gh_ultimo_input_tick[p]) >= GH_REARME_MIN_MS) {   // presiono algun boton este tick Y ya paso el cooldown corto de Guitar Hero (ver GH_REARME_MIN_MS)
         gh_ultimo_input_tick[p] = ahora;   // marca el instante de esta entrada aceptada, para el cooldown de la proxima
         int16_t mejor_dist = 0x7FFF;   // arranca en el maximo posible
-        int8_t  mejor_i    = -1;   // indice de la mejor nota encontrada del carril del color presionado
+        int8_t  mejor_i    = -1;   // indice de la mejor nota encontrada del carril del color presionado, -1 = ninguna
         for (uint8_t i = 0; i < GH_NOTAS_POR_JUG; i++) {   // busca entre las notas de ESTE jugador
             Nota_t *n = &gs.notas[base + i];
             if (!n->activa || n->carril != color) continue;   // ignora notas apagadas o de OTRO carril (color) distinto al presionado
@@ -2111,27 +2612,21 @@ static void GuitarHero_ActualizarJugador(uint8_t p) {   // tick no bloqueante de
             int16_t dist = (int16_t)((centro_nota > (int16_t)GH_ZONA_CX) ? (centro_nota - (int16_t)GH_ZONA_CX) : ((int16_t)GH_ZONA_CX - centro_nota));   // distancia absoluta al centro de la zona de golpe
             if (dist < mejor_dist) { mejor_dist = dist; mejor_i = (int8_t)i; }   // se queda con la mas cercana de ese carril
         }
-        if (mejor_i >= 0 && mejor_dist <= (int16_t)HIT_OK) {   // encontro una nota de ese color Y esta dentro de la ventana de golpe
-            Nota_t *n = &gs.notas[base + mejor_i];
-            if (n->sostenida) {   // nota larga: arranca el sostenido en vez de puntuar/apagarla de una
-                n->x_rel = (int16_t)(GH_ZONA_CX - NOTE_W / 2);   // la centra exacto en la zona de golpe, ahi se queda fija mientras dure (ver el loop de movimiento mas abajo)
-                gh_sosteniendo[p]     = mejor_i;
-                gh_sostener_desde[p]  = ahora;
-                Buzzer_Beep(60);   // beep corto de "enganchada", distinto del golpe normal (80) y de la sostenida completa (120)
-                printf("[GUITARHERO] P%u color=%u sostenida INICIO dist=%d\r\n", p, color, mejor_dist);
-            } else {
-                const char *calidad;
-                if      (mejor_dist <= (int16_t)HIT_PERFECT) { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_PERFECT); calidad = "PERFECT"; }
-                else if (mejor_dist <= (int16_t)HIT_GOOD)    { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_GOOD);    calidad = "GOOD"; }
-                else                                          { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_OK);     calidad = "OK"; }
-                gs.j[p].combo++;   // suma combo por el golpe acertado
-                n->activa = 0;   // la nota golpeada se desactiva (libera el slot para una nueva)
-                Buzzer_Beep(80);   // beep corto de golpe
-                Renderer_GH_FlashZona(p, color);   // dispara el flash blanco de impacto en la zona de golpe de este color
-                printf("[GUITARHERO] P%u color=%u dist=%d %s puntaje=%u combo=%u\r\n",
-                       p, color, mejor_dist, calidad, gs.j[p].puntaje, gs.j[p].combo);
-            }
-        } else {
+        uint16_t hit_ok = guitar_modo_1p ? GH_HIT_OK_1P : GH_HIT_OK_2P;   // ventana "OK" atada a la geometria real de este layout (radio zona + radio nota) -- asi el golpe cuenta apenas la nota TOCA el circulo, en los 2 modos
+        if (mejor_i >= 0 && mejor_dist <= (int16_t)hit_ok) {   // encontro una nota de ese color Y esta dentro de la ventana de golpe
+            Nota_t *n = &gs.notas[base + mejor_i];   // nota que se va a puntuar
+            const char *calidad;   // texto de calidad del golpe, solo para el log
+            if      (mejor_dist <= (int16_t)HIT_PERFECT) { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_PERFECT); calidad = "PERFECT"; }   // dentro de la ventana mas angosta -> maximo puntaje
+            else if (mejor_dist <= (int16_t)HIT_GOOD)    { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_GOOD);    calidad = "GOOD"; }      // ventana intermedia -> puntaje medio
+            else                                          { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_OK);     calidad = "OK"; }        // ventana mas ancha -> puntaje minimo
+            gs.j[p].combo++;   // suma combo por el golpe acertado
+            n->activa = 0;   // la nota golpeada se desactiva (libera el slot para una nueva)
+            Buzzer_Beep(80);   // beep corto de golpe
+            if (guitar_modo_1p) Renderer_GH1P_FlashZona(color);   // dispara el flash blanco de impacto en la zona de golpe de este color
+            else                 Renderer_GH_FlashZona(p, color);
+            printf("[GUITARHERO] P%u color=%u dist=%d %s puntaje=%u combo=%u\r\n",   // log completo del golpe
+                   p, color, mejor_dist, calidad, gs.j[p].puntaje, gs.j[p].combo);
+        } else {   // no habia ninguna nota de ese color en rango -- fallo
             gs.j[p].combo = 0;   /* boton sin nota propia en rango -- corta combo */
             /* Registro de diagnostico del fallo (temporal, para diagnosticar
              * el reporte de "los botones dejan de responder" en Guitar Hero
@@ -2141,12 +2636,12 @@ static void GuitarHero_ActualizarJugador(uint8_t p) {   // tick no bloqueante de
              * color todavia (hay que esperar a que spawnee y se acerque) --
              * del caso de haber apretado demasiado pronto/tarde respecto a
              * una nota que si estaba en pantalla. */
-            if (mejor_i < 0)
+            if (mejor_i < 0)   // caso 1: no habia NINGUNA nota activa de ese carril todavia
                 printf("[GUITARHERO] P%u color=%u MISS: sin nota activa en ese carril (spawneadas=%u/%u)\r\n",
                        p, color, (unsigned)gs.j[p].notas_spawneadas, (unsigned)NOTES_PER_GAME);
-            else
+            else   // caso 2: SI habia una nota de ese carril, pero fuera de la ventana de golpe (muy pronto o muy tarde)
                 printf("[GUITARHERO] P%u color=%u MISS: nota mas cercana a dist=%d (fuera de HIT_OK=%d)\r\n",
-                       p, color, mejor_dist, (int)HIT_OK);
+                       p, color, mejor_dist, (int)hit_ok);
         }
     }
 
@@ -2156,39 +2651,165 @@ static void GuitarHero_ActualizarJugador(uint8_t p) {   // tick no bloqueante de
     for (uint8_t i = 0; i < GH_NOTAS_POR_JUG; i++) {   // recorre todas las notas (activas o no) de este jugador
         Nota_t *n = &gs.notas[base + i];
         if (!n->activa) continue;   // ignora las apagadas
-        if ((int8_t)i == gh_sosteniendo[p]) continue;   // esta nota se esta sosteniendo (ver arriba): queda FIJA en la zona de golpe, no se mueve ni se dibuja aca (Renderer_GH_DrawNotaSostenida ya se encargo)
         n->x_prev = n->x_rel;   // guarda la posicion de este frame como "anterior", para poder borrar solo la estela recorrida
-        n->x_rel  = (int16_t)(n->x_rel - gs.nota_speed);   // avanza la nota hacia la izquierda segun la velocidad configurada
-        Renderer_GH_EraseNotaTrail(p, n, gs.nota_speed);   // borra solo el tramo de pantalla que la nota acaba de dejar atras (no toda la pantalla)
+        n->x_rel  = (int16_t)(n->x_rel - gs.nota_speed);   // avanza la nota hacia la izquierda segun la velocidad configurada (fija toda la sesion, ver gh_speed_base)
+        if (guitar_modo_1p) Renderer_GH1P_EraseNotaTrail(n, gs.nota_speed);   // borra solo el tramo de pantalla que la nota acaba de dejar atras (no toda la pantalla)
+        else                 Renderer_GH_EraseNotaTrail(p, n, gs.nota_speed);
         if (n->x_rel < -(int16_t)NOTE_W) {   // la nota ya salio completamente por la izquierda sin ser golpeada
             n->activa     = 0;   // se desactiva (se perdio)
             gs.j[p].combo = 0;   /* nota perdida sin presionar -- corta combo */
-        } else {
-            Renderer_GH_DrawNota(p, n);   // todavia visible: la dibuja en su nueva posicion
+        } else if (guitar_modo_1p) {   // todavia visible, dibujarla en su nueva posicion (pantalla completa)
+            Renderer_GH1P_DrawNota(n);   // todavia visible: la dibuja en su nueva posicion
+        } else {   // todavia visible (layout Cockpit dividido)
+            Renderer_GH_DrawNota(p, n);
         }
     }
 
-    Renderer_GH_ActualizarPuntaje(p, gs.j[p].puntaje, gs.j[p].combo);   // refresca el puntaje/combo mostrados en pantalla
+    if (guitar_modo_1p) Renderer_GH1P_ActualizarPuntaje(gs.j[p].puntaje, gs.j[p].combo);   // refresca el puntaje/combo mostrados en pantalla
+    else                 Renderer_GH_ActualizarPuntaje(p, gs.j[p].puntaje, gs.j[p].combo);
 
     /* Fin de ronda: se agotaron los spawns y no queda ninguna nota viva */
     if (gs.j[p].notas_spawneadas >= NOTES_PER_GAME) {   // ya se generaron todas las notas posibles de esta ronda
         uint8_t queda_activa = 0;
         for (uint8_t i = 0; i < GH_NOTAS_POR_JUG; i++) if (gs.notas[base + i].activa) { queda_activa = 1; break; }   // busca si queda alguna nota todavia viva en pantalla
         if (!queda_activa) {   // ninguna nota viva: la ronda termino de verdad
-            gh_terminado[p] = 1;
+            gh_terminado[p] = 1;   // marca a este jugador como terminado, esperando reintento
             printf("[GUITARHERO] P%u ronda completa puntaje=%u\r\n", p, gs.j[p].puntaje);
-            Renderer_GH_DibujarFin(p, gs.j[p].puntaje);   // dibuja "RONDA COMPLETA" con el puntaje final, solo en la mitad de este jugador
+            if (guitar_modo_1p) Renderer_GH1P_DibujarFin(gs.j[p].puntaje);   // dibuja "RONDA COMPLETA" con el puntaje final, a pantalla completa
+            else                 Renderer_GH_DibujarFin(p, gs.j[p].puntaje);   // idem, solo en la mitad de este jugador
         }
     }
 }
 
 static void GuitarHero_Actualizar(void) {   // tick de Guitar Hero: en modo Solo actualiza SOLO al jugador 1 (el que GuitarHero_IniciarSolo dibujo e inicializo); en 2 jugadores actualiza ambos
-    if (guitar_modo_1p) {
+    if (guitar_modo_1p) {   // 1 jugador: solo existe estado real para el jugador logico 1
         GuitarHero_ActualizarJugador(1);
-    } else {
+    } else {   // 2 jugadores: cada uno se actualiza por separado
         GuitarHero_ActualizarJugador(0);
         GuitarHero_ActualizarJugador(1);
     }
+}
+
+/* Atajo de salida rapida SOLO disponible en pantallas de FIN de partida de 1
+ * jugador: GAME OVER de Botones (btn_fase[1]==SJ_GAMEOVER con btn_modo_1p) o
+ * de SimonJoy (sj_fase==SJ_GAMEOVER con en_juego_real, que es exclusivo de
+ * SimonJoy 1 jugador -- no confundir con en_juego_real_2p), o RONDA COMPLETA
+ * de Guitar Hero (gh_terminado[1] con guitar_modo_1p). Mantener sostenido
+ * SOLO el boton ROJO (sin AMARILLO) del jugador fisico 0 -- el mismo conjunto
+ * que btn_modo_1p/guitar_modo_1p ya usan siempre en modo 1 jugador -- durante
+ * SALIR_GAMEOVER_1P_MS dispara la salida. Fuera de esas pantallas (por
+ * ejemplo, sosteniendo ROJO como parte normal del juego) el cronometro no
+ * corre, para no interferir con la partida en curso. Mismo patron de lectura
+ * de NIVEL crudo por GPIO (no flanco) que ComboSalir_Detectado, pero con un
+ * solo boton y un umbral mas corto (pensado para salir de una pantalla ya
+ * terminada, no para interrumpir una partida en curso). */
+#define SALIR_GAMEOVER_1P_MS 2000U   // ms que hay que sostener ROJO en fin de partida 1P antes de disparar la salida; bajarlo hace el atajo mas sensible (mas riesgo de dispararlo sin querer)
+static uint32_t salir_gameover_1p_tick = 0;   // tick en que se detecto ROJO presionado (0 = no hay cronometro corriendo)
+
+static uint8_t SalirGameOver1P_Detectado(void) {   // revisa si, en una pantalla de fin de partida de 1 jugador, se lleva 2s manteniendo presionado solo ROJO; devuelve 1 en el ciclo en que se cumple
+    uint8_t en_fin_1p = (btn_modo_1p    && btn_fase[1] == SJ_GAMEOVER) ||
+                        (guitar_modo_1p && gh_terminado[1]) ||
+                        (en_juego_real  && sj_fase == SJ_GAMEOVER);
+    if (!en_fin_1p) {
+        salir_gameover_1p_tick = 0;   // fuera de estas pantallas, el cronometro no corre
+        return 0;
+    }
+
+    uint8_t rojo = (HAL_GPIO_ReadPin(BTN_SW[0][0].port, BTN_SW[0][0].pin) == GPIO_PIN_RESET);   // nivel crudo de ROJO del jugador fisico 0
+    if (!rojo) {
+        salir_gameover_1p_tick = 0;   // se solto antes de completar el tiempo: cancela el cronometro
+        return 0;
+    }
+    if (salir_gameover_1p_tick == 0) {
+        salir_gameover_1p_tick = HAL_GetTick();   // primera vez que se detecta ROJO presionado: arranca el cronometro
+        return 0;
+    }
+    if (HAL_GetTick() - salir_gameover_1p_tick >= SALIR_GAMEOVER_1P_MS) {
+        printf("[COMBO] ROJO 2s en fin de partida 1P -> menu de modos\r\n");
+        salir_gameover_1p_tick = 0;   /* rearma para la proxima vez */
+        return 1;
+    }
+    return 0;
+}
+
+/* Mismo atajo que SalirGameOver1P_Detectado pero para 2 jugadores: solo
+ * corre cuando AMBOS jugadores ya terminaron su partida (GAME OVER de los 2
+ * en Botones/SimonJoy, o RONDA COMPLETA de los 2 en Guitar Hero) -- si uno
+ * de los 2 sigue jugando, el atajo no aplica todavia. Sostener 2s el ROJO
+ * de CUALQUIERA de los 2 jugadores fisicos dispara la salida (cada uno se
+ * cronometra por separado, salir_gameover_2p_tick[p]). A diferencia del
+ * atajo de 1 jugador, este NO corre durante una partida 2P EN CURSO -- para
+ * salir a mitad de partida sigue estando el combo ROJO+AMARILLO de 3s
+ * (ComboSalir_Detectado), que exige los 2 botones a la vez y no se confunde
+ * con presionar ROJO solo como parte normal del juego. */
+#define SALIR_GAMEOVER_2P_MS 2000U   // ms que hay que sostener ROJO en fin de partida 2P antes de disparar la salida (una vez que AMBOS jugadores ya terminaron)
+static uint32_t salir_gameover_2p_tick[2] = { 0, 0 };   // tick en que cada jugador empezo a sostener ROJO (0 = sin cronometro corriendo)
+
+static uint8_t SalirGameOver2P_Detectado(void) {   // revisa si, con AMBOS jugadores ya terminados, alguno lleva 2s sosteniendo su propio ROJO; devuelve 1 en el ciclo en que se cumple
+    uint8_t ambos_terminaron =   // true solo si el modo real actual tiene a SUS 2 jugadores en estado de fin de partida
+        (en_juego_real_botones && !btn_modo_1p    && btn_fase[0]  == SJ_GAMEOVER && btn_fase[1]  == SJ_GAMEOVER) ||   // Botones 2P: ambos en GAME OVER
+        (en_juego_real_2p                                                        && sj2_fase[0]  == SJ_GAMEOVER && sj2_fase[1] == SJ_GAMEOVER) ||   // SimonJoy 2P: ambos en GAME OVER
+        (en_juego_real_guitar  && !guitar_modo_1p && gh_terminado[0] && gh_terminado[1]);   // Guitar Hero 2P: ambos en RONDA COMPLETA
+    if (!ambos_terminaron) {   // todavia no aplica el atajo (al menos uno sigue jugando)
+        salir_gameover_2p_tick[0] = salir_gameover_2p_tick[1] = 0;   // fuera de esta condicion, ningun cronometro corre
+        return 0;
+    }
+
+    uint8_t disparado = 0;   // resultado acumulado (contempla el caso de que los 2 jugadores completen el gesto en el mismo tick)
+    for (uint8_t p = 0; p < 2; p++) {   // revisa el ROJO de cada jugador fisico por separado
+        uint8_t rojo = (HAL_GPIO_ReadPin(BTN_SW[p][0].port, BTN_SW[p][0].pin) == GPIO_PIN_RESET);   // nivel crudo de ROJO de este jugador
+        if (!rojo) {   // no esta presionado
+            salir_gameover_2p_tick[p] = 0;   // se solto antes de completar el tiempo: cancela el cronometro de este jugador
+            continue;
+        }
+        if (salir_gameover_2p_tick[p] == 0) {   // primera vez que se lo ve presionado
+            salir_gameover_2p_tick[p] = HAL_GetTick();   // primera vez que se detecta ROJO presionado: arranca el cronometro de este jugador
+            continue;
+        }
+        if (HAL_GetTick() - salir_gameover_2p_tick[p] >= SALIR_GAMEOVER_2P_MS) {   // ya paso el tiempo minimo sostenido
+            printf("[COMBO] P%u ROJO 2s en fin de partida 2P -> menu de modos\r\n", p);
+            salir_gameover_2p_tick[0] = salir_gameover_2p_tick[1] = 0;   /* rearma para la proxima vez */
+            disparado = 1;
+        }
+    }
+    return disparado;   // 1 si algun jugador completo el gesto este tick
+}
+
+/* Sostener VERDE (color 1) o AZUL (color 2) 2s durante una partida real de
+ * Guitar Hero (jugando o en la pantalla de RONDA COMPLETA, no importa cual
+ * de las 2) salta directo a elegir otra cancion o dificultad, sin tener que
+ * salir primero al menu de modos. Funciona en 1 y 2 jugadores: en 1
+ * jugador solo se revisa el conjunto fisico 0 (el unico que se lee en ese
+ * modo, ver Botones_LeerColor); en 2 jugadores, CUALQUIERA de los 2
+ * jugadores puede disparar el cambio, porque cancion y dificultad son
+ * compartidas por toda la partida (gs.nota_speed, buzzer_fondo_*), no hay
+ * una version "por jugador". No choca con la logica de juego: las notas
+ * sostenidas ya no existen (ver conversacion anterior), asi que sostener un
+ * color mientras se juega no interfiere con ningun puntaje. */
+#define GH_CAMBIAR_MS 2000U   // ms que hay que sostener VERDE/AZUL para saltar a elegir cancion/dificultad
+static uint32_t gh_cambiar_cancion_tick[2]    = { 0, 0 };   // tick en que cada jugador empezo a sostener VERDE (0 = sin cronometro)
+static uint32_t gh_cambiar_dificultad_tick[2] = { 0, 0 };   // idem para AZUL
+
+static uint8_t GH_BotonSostenidoDetectado(uint8_t color, uint32_t *tick_arr) {   // nivel crudo de `color` sostenido 2s -- mismo patron que SalirGameOver2P_Detectado, con un solo boton en vez de ROJO
+    uint8_t max_p     = (uint8_t)(guitar_modo_1p ? 1 : 2);   // en 1 jugador solo hay un fisico relevante (el 0)
+    uint8_t disparado = 0;
+    for (uint8_t p = 0; p < max_p; p++) {   // revisa cada jugador fisico relevante
+        uint8_t hw = (uint8_t)(guitar_modo_1p ? 0 : p);   // en 1 jugador siempre lee el conjunto fisico 0, igual que Botones_LeerColor
+        uint8_t presionado = (HAL_GPIO_ReadPin(BTN_SW[hw][color].port, BTN_SW[hw][color].pin) == GPIO_PIN_RESET);   // nivel crudo del color pedido
+        if (!presionado) {   // no esta presionado
+            tick_arr[p] = 0;   // se solto antes de completar el tiempo: cancela el cronometro de este jugador
+            continue;
+        }
+        if (tick_arr[p] == 0) {   // primera vez que se lo ve presionado
+            tick_arr[p] = HAL_GetTick();   // primera vez que se detecta presionado: arranca el cronometro de este jugador
+            continue;
+        }
+        if (HAL_GetTick() - tick_arr[p] >= GH_CAMBIAR_MS) {   // ya paso el tiempo minimo sostenido
+            tick_arr[0] = tick_arr[1] = 0;   /* rearma para la proxima vez */
+            disparado = 1;
+        }
+    }
+    return disparado;   // 1 si algun jugador completo el gesto este tick
 }
 
 /* ========================================================================== */
@@ -2210,24 +2831,24 @@ static void GuitarHero_Actualizar(void) {   // tick de Guitar Hero: en modo Solo
  * de avanzar nunca se ejecutaria. */
 static void MenuJugadores_Procesar(uint8_t *screen) {   // mueve el cursor del menu 1/2 JUGADORES cuando cualquiera de los 2 joystick sale de su zona muerta
     static uint32_t ultimo_mov_joy = 0;   // tick del ultimo movimiento aceptado, para aplicar el cooldown
-    uint32_t ahora = HAL_GetTick();
+    uint32_t ahora = HAL_GetTick();   // tick actual
 
     uint16_t j1x_b, j1x_a, j1y_b, j1y_a, j2x_b, j2x_a, j2y_b, j2y_a;   // rangos "sin movimiento" de los 4 ejes (X/Y de J1 y J2)
-    Joy_Umbrales(centro_j1x, &j1x_b, &j1x_a);
-    Joy_Umbrales(centro_j1y, &j1y_b, &j1y_a);
-    Joy_Umbrales(centro_j2x, &j2x_b, &j2x_a);
-    Joy_Umbrales(centro_j2y, &j2y_b, &j2y_a);
+    Joy_Umbrales(centro_j1x, &j1x_b, &j1x_a);   // rango del eje X de J1
+    Joy_Umbrales(centro_j1y, &j1y_b, &j1y_a);   // rango del eje Y de J1
+    Joy_Umbrales(centro_j2x, &j2x_b, &j2x_a);   // rango del eje X de J2
+    Joy_Umbrales(centro_j2y, &j2y_b, &j2y_a);   // rango del eje Y de J2
 
     uint8_t joy_movido = 0;   // 1 si corresponde alternar el cursor este tick
     if ((ahora - ultimo_mov_joy) >= MENU_JOY_COOLDOWN_MS) {   // solo revisa si ya paso el cooldown desde el ultimo movimiento
         if (joystick_x < j1x_b || joystick_x > j1x_a || joystick_y < j1y_b || joystick_y > j1y_a ||
             joystick2_x < j2x_b || joystick2_x > j2x_a || joystick2_y < j2y_b || joystick2_y > j2y_a) {   // CUALQUIERA de los 4 ejes (de cualquiera de los 2 joystick) esta fuera de su banda muerta
-            joy_movido = 1;
+            joy_movido = 1;   // algun eje esta fuera de su banda muerta
             ultimo_mov_joy = ahora;   // reinicia el cooldown
         }
     }
 
-    if (joy_movido) {
+    if (joy_movido) {   // corresponde alternar el cursor
         uint8_t screen_ant = *screen;   // guarda la pantalla (cursor) anterior, para saber que borrar
         *screen = (*screen == DEMO_JUGADORES_1) ? DEMO_JUGADORES_2 : DEMO_JUGADORES_1;   // alterna entre las 2 unicas opciones (no hay mas de 2, asi que "mover" siempre es alternar)
         Renderer_UpdateSeleccionJugadores((uint8_t)(screen_ant - DEMO_JUGADORES_1),
@@ -2237,25 +2858,25 @@ static void MenuJugadores_Procesar(uint8_t *screen) {   // mueve el cursor del m
 }
 
 static void MenuModos_Procesar(uint8_t *screen) {   // avanza el cursor del menu de MODO (Simon/Sim+Joy/Guitar) cuando cualquier joystick se mueve
-    static uint32_t ultimo_mov_modo = 0;
-    uint32_t ahora = HAL_GetTick();
+    static uint32_t ultimo_mov_modo = 0;   // tick del ultimo movimiento aceptado
+    uint32_t ahora = HAL_GetTick();   // tick actual
 
-    uint16_t j1x_b, j1x_a, j1y_b, j1y_a, j2x_b, j2x_a, j2y_b, j2y_a;
-    Joy_Umbrales(centro_j1x, &j1x_b, &j1x_a);
-    Joy_Umbrales(centro_j1y, &j1y_b, &j1y_a);
-    Joy_Umbrales(centro_j2x, &j2x_b, &j2x_a);
-    Joy_Umbrales(centro_j2y, &j2y_b, &j2y_a);
+    uint16_t j1x_b, j1x_a, j1y_b, j1y_a, j2x_b, j2x_a, j2y_b, j2y_a;   // rangos sin movimiento de los 4 ejes
+    Joy_Umbrales(centro_j1x, &j1x_b, &j1x_a);   // eje X de J1
+    Joy_Umbrales(centro_j1y, &j1y_b, &j1y_a);   // eje Y de J1
+    Joy_Umbrales(centro_j2x, &j2x_b, &j2x_a);   // eje X de J2
+    Joy_Umbrales(centro_j2y, &j2y_b, &j2y_a);   // eje Y de J2
 
-    uint8_t joy_movido = 0;
-    if ((ahora - ultimo_mov_modo) >= MENU_MODO_COOLDOWN_MS) {
+    uint8_t joy_movido = 0;   // 1 si corresponde avanzar el cursor este tick
+    if ((ahora - ultimo_mov_modo) >= MENU_MODO_COOLDOWN_MS) {   // solo revisa si ya paso el cooldown
         if (joystick_x < j1x_b || joystick_x > j1x_a || joystick_y < j1y_b || joystick_y > j1y_a ||
-            joystick2_x < j2x_b || joystick2_x > j2x_a || joystick2_y < j2y_b || joystick2_y > j2y_a) {
+            joystick2_x < j2x_b || joystick2_x > j2x_a || joystick2_y < j2y_b || joystick2_y > j2y_a) {   // CUALQUIERA de los 4 ejes fuera de banda muerta
             joy_movido = 1;
             ultimo_mov_modo = ahora;
         }
     }
 
-    if (joy_movido) {
+    if (joy_movido) {   // corresponde avanzar el cursor
         uint8_t screen_ant = *screen;   // pantalla (opcion) anterior, para saber que borrar
         if (*screen == DEMO_MODO_GUITAR)
             *screen = DEMO_MODO_SIMON;   // desde la ultima opcion, vuelve a la primera (ciclico)
@@ -2286,8 +2907,8 @@ static void MenuModos_Procesar(uint8_t *screen) {   // avanza el cursor del menu
  * MenuModos_Procesar) -- mismo riesgo de "arrastre" que ya se evita en el
  * resto de este recorrido. */
 static void MenuCanciones_Armar(void) {   // llamar SIEMPRE justo antes de mostrar DEMO_MENU_CANCIONES
-    sj2_joy_listo_dir[0] = 0;
-    sj2_joy_listo_dir[1] = 0;
+    sj2_joy_listo_dir[0] = 0;   // exige ver el stick de J1 centrado antes de aceptar el primer movimiento
+    sj2_joy_listo_dir[1] = 0;   // idem para J2
 }
 
 static void MenuCanciones_Procesar(uint8_t *screen) {   // sube/baja el cursor de la lista con cualquiera de los 2 joystick; confirmar corre en main() via confirmar_boton
@@ -2296,12 +2917,42 @@ static void MenuCanciones_Procesar(uint8_t *screen) {   // sube/baja el cursor d
         uint8_t dir = Joystick2_LeerDireccion(p);   // 0=ARRIBA, 1=ABAJO, 2/3=IZQUIERDA/DERECHA (ignoradas aca), 0xFF=sin movimiento nuevo
         if (dir != 0 && dir != 1) continue;   // solo arriba/abajo mueven el cursor de esta lista
 
-        uint8_t ant = cancion_cursor;
+        uint8_t ant = cancion_cursor;   // cursor anterior, para el redibujo incremental
         cancion_cursor = (dir == 0)
             ? (uint8_t)((cancion_cursor == 0) ? (CANCIONES_N - 1) : (cancion_cursor - 1))   /* ARRIBA: cancion anterior, con vuelta ciclica */
             : (uint8_t)((cancion_cursor + 1) % CANCIONES_N);                                 /* ABAJO: cancion siguiente, con vuelta ciclica */
-        Renderer_UpdateListaCanciones(ant, cancion_cursor);
+        Renderer_UpdateListaCanciones(ant, cancion_cursor);   // redibuja solo las 2 filas que cambiaron
         Buzzer_Patron(CANCIONES_DATA[cancion_cursor], CANCIONES_LEN[cancion_cursor]);   // previsualiza el sonido de la cancion resaltada
+    }
+}
+
+/* ========================================================================== */
+/* === MENU DE DIFICULTAD (SOLO GUITAR HERO) ================================= */
+/* ========================================================================== */
+/* Pantalla legada (Renderer_DrawMenu, ver renderer.c) reconectada al
+ * recorrido real: aparece SOLO para Guitar Hero, justo despues de confirmar
+ * el modo y antes de elegir cancion (ver el bloque de confirmacion de modo
+ * mas abajo). IZQUIERDA/DERECHA de cualquiera de los 2 joystick mueve el
+ * cursor entre las 3 tarjetas; CUALQUIER boton confirma (via
+ * "confirmar_boton", igual que el resto de los menus de este recorrido). */
+
+static void MenuDificultad_Armar(void) {   // llamar SIEMPRE justo antes de mostrar DEMO_MENU_DIFICULTAD -- mismo motivo que MenuCanciones_Armar
+    sj2_joy_listo_dir[0] = 0;   // exige ver el stick de J1 centrado antes de aceptar el primer movimiento
+    sj2_joy_listo_dir[1] = 0;   // idem para J2
+}
+
+static void MenuDificultad_Procesar(uint8_t *screen) {   // mueve el cursor entre las 3 tarjetas con cualquiera de los 2 joystick; confirmar corre en main() via confirmar_boton
+    (void)screen;   // esta pantalla no cambia sola de pantalla: la confirmacion (boton) se maneja en main()
+    for (uint8_t p = 0; p < 2; p++) {   // revisa el joystick de cada jugador por separado, cualquiera de los 2 puede navegar
+        uint8_t dir = Joystick2_LeerDireccion(p);   // 0=ARRIBA, 1=ABAJO (ignoradas aca), 2=IZQUIERDA, 3=DERECHA
+        if (dir != 2 && dir != 3) continue;   // solo izquierda/derecha mueven el cursor de esta lista (las tarjetas estan en fila horizontal)
+
+        uint8_t ant = dificultad_cursor;   // cursor anterior (sin usar, se mantiene por simetria con MenuCanciones_Procesar)
+        dificultad_cursor = (dir == 2)
+            ? (uint8_t)((dificultad_cursor == 0) ? 2 : (dificultad_cursor - 1))   /* IZQUIERDA: tarjeta anterior, con vuelta ciclica */
+            : (uint8_t)((dificultad_cursor + 1) % 3);                              /* DERECHA: tarjeta siguiente, con vuelta ciclica */
+        (void)ant;   // Renderer_DrawMenu redibuja TODO, no necesita el cursor anterior (a diferencia de la lista de canciones)
+        Renderer_DrawMenu(dificultad_cursor);   // redibuja completo -- solo 3 tarjetas, mucho mas barato que la lista de canciones, no hace falta una version incremental
     }
 }
 
@@ -2313,26 +2964,26 @@ static void MenuCanciones_Procesar(uint8_t *screen) {   // sube/baja el cursor d
  * de main(), no en esta funcion. */
 #define INICIALES_JOY_COOLDOWN_MS 180U   // tiempo minimo (en milisegundos) entre 2 cambios de letra aceptados; disminuir este valor permite recorrer las letras mas rapido
 static void MenuIniciales_Procesar(void) {   // recorre ciclicamente A-Z la letra actual del nombre en edicion, segun el joystick del jugador correspondiente
-    static uint32_t ultimo_mov = 0;
-    uint32_t ahora = HAL_GetTick();
+    static uint32_t ultimo_mov = 0;   // tick del ultimo cambio de letra aceptado
+    uint32_t ahora = HAL_GetTick();   // tick actual
     if ((ahora - ultimo_mov) < INICIALES_JOY_COOLDOWN_MS) return;   // todavia no paso el cooldown desde el ultimo cambio de letra
 
     /* El mismo joystick fisico que un jugador utilizara durante la partida
      * (determinado por JugadorFisico(), ver mas arriba) es el que emplea
      * para escribir su nombre en esta pantalla. */
-    uint8_t hw = JugadorFisico(nombre_jugador_actual);
-    uint16_t jy = (hw == 0) ? joystick_y : joystick2_y;
-    uint16_t bajo_y, alto_y;
-    Joy_Umbrales((hw == 0) ? centro_j1y : centro_j2y, &bajo_y, &alto_y);
+    uint8_t hw = JugadorFisico(nombre_jugador_actual);   // joystick fisico que le corresponde a este jugador
+    uint16_t jy = (hw == 0) ? joystick_y : joystick2_y;   // lectura cruda del eje Y de ese joystick fisico
+    uint16_t bajo_y, alto_y;   // rango sin movimiento del eje Y
+    Joy_Umbrales((hw == 0) ? centro_j1y : centro_j2y, &bajo_y, &alto_y);   // calcula ese rango segun el centro medido correcto
 
     char *c = &nombre_jugadores[nombre_jugador_actual][nombre_pos_actual];   // puntero directo a la letra que se esta editando ahora mismo
     if (jy >= alto_y) {   // stick empujado hacia abajo del rango (arriba, segun la convencion ya corregida)
         *c = (char)((*c >= 'Z') ? 'A' : (char)(*c + 1));   // siguiente letra, con vuelta ciclica de Z a A
-        ultimo_mov = ahora;
+        ultimo_mov = ahora;   // reinicia el cooldown
         Renderer_UpdateNombreLetra(nombre_jugador_actual, nombre_pos_actual, *c);   // redibuja SOLO esa letra en pantalla
     } else if (jy <= bajo_y) {   // stick empujado hacia el otro lado (abajo)
         *c = (char)((*c <= 'A') ? 'Z' : (char)(*c - 1));   // letra anterior, con vuelta ciclica de A a Z
-        ultimo_mov = ahora;
+        ultimo_mov = ahora;   // reinicia el cooldown
         Renderer_UpdateNombreLetra(nombre_jugador_actual, nombre_pos_actual, *c);
     }
 }
@@ -2368,9 +3019,9 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
     centro_j2y = joystick2_y;   // idem eje Y de J2
     printf("[CALIB] centro j1=(%u,%u) j2=(%u,%u)\r\n", centro_j1x, centro_j1y, centro_j2x, centro_j2y);   // log de los 4 centros medidos, para poder verificarlos por consola
 
-#if BUZZER_DIAGNOSTICO_BARRIDO
+#if BUZZER_DIAGNOSTICO_BARRIDO   // este bloque completo solo se compila si la constante esta en 1
     Buzzer_BarridoDiagnostico();   // solo compila/corre si BUZZER_DIAGNOSTICO_BARRIDO esta en 1 (ver su #define mas arriba)
-#endif
+#endif   // cierra el bloque condicionado
 
     uint8_t  screen        = DEMO_SPLASH;   // pantalla inicial: splash de bienvenida
     uint8_t  last_paso_sim = 0xFF;   /* fuerza el primer dibujo de las vistas previas */
@@ -2385,9 +3036,9 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
 
         /* ---- diagnóstico ADC (solo cuando no hay partida) ---- */
         if (!en_juego_real && !en_juego_real_2p && !en_juego_real_botones && !en_juego_real_guitar) {   // ningun modo real esta corriendo ahora mismo
-            static uint32_t dbg_tick = 0;
+            static uint32_t dbg_tick = 0;   // tick del ultimo log de diagnostico impreso
             if (HAL_GetTick() - dbg_tick >= 500) {   // cada 500ms (no cada frame, para no inundar la consola)
-                dbg_tick = HAL_GetTick();
+                dbg_tick = HAL_GetTick();   // marca este log como el ultimo impreso
                 printf("[ADC] j1=(%u,%u) j2=(%u,%u)\r\n", joystick_x, joystick_y, joystick2_x, joystick2_y);   // log periodico de diagnostico con las 4 lecturas crudas filtradas
             }
         }
@@ -2405,29 +3056,29 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
          * preferible a una pantalla en blanco permanente hasta reiniciar la
          * placa a mano. Esto es un parche sobre el sintoma, NO arregla la
          * causa electrica de fondo. */
-        if (ILI9341_FalloComunicacionDetectado()) {
+        if (ILI9341_FalloComunicacionDetectado()) {   // se detecto una racha de fallas de SPI consecutivas (ver LCD_SPI_FALLAS_UMBRAL en ili9341.c)
             printf("[LCD] fallas de SPI persistentes -> reinicializando pantalla\r\n");
-            en_juego_real = en_juego_real_2p = en_juego_real_botones = en_juego_real_guitar = 0;
-            btn_modo_1p    = 0;
-            guitar_modo_1p = 0;
-            conteo_auto    = 0;
-            Buzzer_Fondo_Detener();
-            for (uint8_t p = 0; p < 2; p++) for (uint8_t c = 0; c < 4; c++) Boton_LED(p, c, 0);
+            en_juego_real = en_juego_real_2p = en_juego_real_botones = en_juego_real_guitar = 0;   // apaga todos los flags de partida real en curso
+            btn_modo_1p    = 0;   // limpia el flag de 1 jugador de Botones
+            guitar_modo_1p = 0;   // idem Guitar Hero
+            conteo_auto    = 0;   // cancela cualquier conteo 3-2-1-GO en curso
+            Buzzer_Fondo_Detener();   // corta la musica de fondo
+            for (uint8_t p = 0; p < 2; p++) for (uint8_t c = 0; c < 4; c++) Boton_LED(p, c, 0);   // apaga los 8 LEDs
             ILI9341_Init();          // reinicializa el controlador de la pantalla por completo (recupera de un posible glitch en RST)
-            ILI9341_SetPortrait(1);
-            ILI9341_SetFlip180(0);
-            screen = DEMO_SPLASH;
-            Demo_Enter(screen);
-            BotonesChase_Iniciar();
-            continue;
+            ILI9341_SetPortrait(1);   // vuelve a retrato (orientacion del splash/menus)
+            ILI9341_SetFlip180(0);   // sin flip
+            screen = DEMO_SPLASH;   // vuelve al splash
+            Demo_Enter(screen);   // dibuja el splash
+            BotonesChase_Iniciar();   // reactiva la animacion de LEDs
+            continue;   // salta el resto del loop este tick
         }
 
         /* Combo de salida ROJO+AMARILLO (máxima prioridad) */
         if (ComboSalir_Detectado()) {   // se revisa ANTES que cualquier otra logica del loop, para poder salir desde cualquier pantalla/modo
             en_juego_real         = 0;   // apaga todos los flags de "partida real" en curso
-            en_juego_real_2p      = 0;
-            en_juego_real_botones = 0;
-            en_juego_real_guitar  = 0;
+            en_juego_real_2p      = 0;   // apaga tambien el flag de SimonJoy 2 jugadores
+            en_juego_real_botones = 0;   // idem Botones
+            en_juego_real_guitar  = 0;   // idem Guitar Hero
             btn_modo_1p           = 0;   // limpia el flag de "modo 1 jugador" de BOTONES -- si quedara en 1, la proxima partida de 2 jugadores leeria solo el hardware fisico del jugador 0 para ambos lados (ver Botones_LeerColor/Boton_LED/ComboSalir_Detectado)
             guitar_modo_1p        = 0;   // idem para Guitar Hero -- ambos flags se recalculan igual al confirmar el proximo modo, esto es solo limpieza defensiva al salir
             conteo_auto           = 0;   // cancela cualquier conteo 3-2-1-GO en curso
@@ -2439,6 +3090,77 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
             Demo_Enter(screen);   // dibuja el splash
             BotonesChase_Iniciar();   // reactiva la animacion de LEDs del splash
             continue;   // salta el resto del loop este tick (ya se manejo la prioridad maxima)
+        }
+
+        /* Atajo de salida rapida en pantallas de FIN de partida de 1 jugador
+         * (GAME OVER de Botones/SimonJoy, RONDA COMPLETA de Guitar Hero):
+         * mantener ROJO 2s vuelve directo al menu de SELECCION DE MODO (no
+         * al de jugadores, ni al splash), con el cursor en el modo recien
+         * jugado -- ver SalirGameOver1P_Detectado para el detalle de en que
+         * pantallas aplica. */
+        if (SalirGameOver1P_Detectado()) {   // ROJO sostenido 2s en fin de partida 1 jugador
+            screen = guitar_modo_1p ? DEMO_MODO_GUITAR   // vuelve al mismo modo que se estaba jugando
+                    : btn_modo_1p    ? DEMO_MODO_SIMON
+                                      : DEMO_MODO_SIMONJOY;   // ninguno de los 2 flags activo -> fue SimonJoy 1 jugador
+            en_juego_real = en_juego_real_2p = en_juego_real_botones = en_juego_real_guitar = 0;   // apaga todos los flags de partida real
+            btn_modo_1p    = 0;   // limpia el flag de 1 jugador de Botones
+            guitar_modo_1p = 0;   // idem Guitar Hero
+            Buzzer_Fondo_Detener();   // corta la musica de fondo
+            for (uint8_t c = 0; c < 4; c++) Boton_LED(0, c, 0);   // apaga los 4 LEDs del jugador fisico 0 (el unico usado en modo 1 jugador)
+            ILI9341_SetFlip180(0);   // sin flip, orientacion normal del menu
+            Demo_Enter(screen);   // dibuja el menu destino
+            continue;   // salta el resto del loop este tick
+        }
+
+        /* Mismo atajo, para 2 jugadores: solo cuando AMBOS ya terminaron su
+         * partida (ver SalirGameOver2P_Detectado) -- mantiene "2 JUGADORES"
+         * elegido, solo vuelve al menu de SELECCION DE MODO. */
+        if (SalirGameOver2P_Detectado()) {   // ROJO sostenido 2s en fin de partida 2 jugadores (ambos ya terminaron)
+            screen = en_juego_real_guitar   ? DEMO_MODO_GUITAR   // vuelve al mismo modo que se estaba jugando
+                    : en_juego_real_botones ? DEMO_MODO_SIMON
+                                              : DEMO_MODO_SIMONJOY;   // ninguno de los 2 -> fue SimonJoy 2 jugadores
+            en_juego_real = en_juego_real_2p = en_juego_real_botones = en_juego_real_guitar = 0;   // apaga todos los flags de partida real
+            btn_modo_1p    = 0;   // limpia el flag de 1 jugador de Botones (defensivo, no deberia estar en 1 en 2P)
+            guitar_modo_1p = 0;   // idem Guitar Hero
+            Buzzer_Fondo_Detener();   // corta la musica de fondo
+            for (uint8_t p = 0; p < 2; p++) for (uint8_t c = 0; c < 4; c++) Boton_LED(p, c, 0);   // apaga los 8 LEDs, de ambos jugadores
+            ILI9341_SetFlip180(0);   // sin flip, orientacion normal del menu
+            Demo_Enter(screen);   // dibuja el menu destino
+            continue;   // salta el resto del loop este tick
+        }
+
+        /* Sostener VERDE 2s durante una partida real de Guitar Hero (jugando
+         * o en RONDA COMPLETA) salta a elegir otra cancion, sin pasar por el
+         * menu de modos ni tocar la dificultad actual (ver
+         * GH_BotonSostenidoDetectado). guitar_modo_1p/jugadores_seleccionados
+         * quedan intactos: al confirmar la cancion nueva, el conteo
+         * automatico vuelve a calcular guitar_modo_1p igual que siempre. */
+        if (en_juego_real_guitar && GH_BotonSostenidoDetectado(1, gh_cambiar_cancion_tick)) {   // VERDE sostenido 2s durante Guitar Hero (jugando o en fin de ronda)
+            printf("[COMBO] VERDE 2s en Guitar Hero -> elegir cancion\r\n");
+            en_juego_real = en_juego_real_2p = en_juego_real_botones = en_juego_real_guitar = 0;   // corta la partida actual
+            Buzzer_Fondo_Detener();   // corta la musica de fondo
+            for (uint8_t p = 0; p < 2; p++) for (uint8_t c = 0; c < 4; c++) Boton_LED(p, c, 0);   // apaga los 8 LEDs
+            ILI9341_SetFlip180(0);   // sin flip
+            screen = DEMO_MENU_CANCIONES;   // salta directo al menu de canciones
+            Demo_Enter(screen);   // lo dibuja
+            MenuCanciones_Armar();   // exige stick centrado antes del primer movimiento
+            continue;   // salta el resto del loop este tick
+        }
+
+        /* Mismo atajo con AZUL, para elegir otra dificultad -- desde ahi el
+         * flujo normal sigue a DEMO_MENU_CANCIONES (ver el bloque de
+         * confirmacion de DEMO_MENU_DIFICULTAD), asi que tambien deja
+         * elegir cancion de paso. */
+        if (en_juego_real_guitar && GH_BotonSostenidoDetectado(2, gh_cambiar_dificultad_tick)) {   // AZUL sostenido 2s durante Guitar Hero
+            printf("[COMBO] AZUL 2s en Guitar Hero -> elegir dificultad\r\n");
+            en_juego_real = en_juego_real_2p = en_juego_real_botones = en_juego_real_guitar = 0;   // corta la partida actual
+            Buzzer_Fondo_Detener();   // corta la musica de fondo
+            for (uint8_t p = 0; p < 2; p++) for (uint8_t c = 0; c < 4; c++) Boton_LED(p, c, 0);   // apaga los 8 LEDs
+            ILI9341_SetFlip180(0);   // sin flip
+            screen = DEMO_MENU_DIFICULTAD;   // salta directo al menu de dificultad
+            Demo_Enter(screen);   // lo dibuja
+            MenuDificultad_Armar();   // exige stick centrado antes del primer movimiento
+            continue;   // salta el resto del loop este tick
         }
 
         Buzzer_Actualizar();   // tick no bloqueante del buzzer (SFX + musica de fondo), siempre corre sin importar la pantalla
@@ -2454,53 +3176,56 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
          * aplica en estas 2 pantallas -- el resto de las confirmaciones de
          * abajo (salir de un juego real, arrancar preview) siguen atadas
          * solo a B1 por ahora, sin cambios de comportamiento ahi. */
-        uint8_t en_pantalla_modo = (screen == DEMO_MODO_SIMON || screen == DEMO_MODO_SIMONJOY || screen == DEMO_MODO_GUITAR);
-        uint8_t confirmar_boton = (screen == DEMO_SPLASH || screen == DEMO_JUGADORES_1 ||
+        uint8_t en_pantalla_modo = (screen == DEMO_MODO_SIMON || screen == DEMO_MODO_SIMONJOY || screen == DEMO_MODO_GUITAR);   // true en cualquiera de las 3 tarjetas del menu de modo
+        uint8_t confirmar_boton = (screen == DEMO_SPLASH || screen == DEMO_JUGADORES_1 ||   // pantallas donde CUALQUIER boton arcade confirma (no solo B1)
                                     screen == DEMO_JUGADORES_2 || screen == DEMO_INICIALES || en_pantalla_modo ||
-                                    screen == DEMO_MENU_CANCIONES)
-                                 ? BotonesNavegacion_Presionado() : 0;
+                                    screen == DEMO_MENU_DIFICULTAD || screen == DEMO_MENU_CANCIONES)
+                                 ? BotonesNavegacion_Presionado() : 0;   // fuera de esas pantallas, confirmar_boton siempre es 0 (solo B1 confirma ahi)
 
         /* ------------------------------------------------------------------
          * MENÚS DE SELECCIÓN (con joystick y botones, sin B1 para mover)
          * ------------------------------------------------------------------ */
-        if (screen == DEMO_JUGADORES_1 || screen == DEMO_JUGADORES_2) {
+        if (screen == DEMO_JUGADORES_1 || screen == DEMO_JUGADORES_2) {   // menu de cantidad de jugadores
             MenuJugadores_Procesar(&screen);
         }
-        else if (screen == DEMO_INICIALES) {
+        else if (screen == DEMO_INICIALES) {   // pantalla de captura de nombre
             MenuIniciales_Procesar();
         }
-        else if (en_pantalla_modo) {
+        else if (en_pantalla_modo) {   // menu de modo de juego
             MenuModos_Procesar(&screen);
         }
-        else if (screen == DEMO_MENU_CANCIONES) {
+        else if (screen == DEMO_MENU_DIFICULTAD) {   // menu de dificultad (solo Guitar Hero)
+            MenuDificultad_Procesar(&screen);
+        }
+        else if (screen == DEMO_MENU_CANCIONES) {   // menu de seleccion de cancion (solo Guitar Hero)
             MenuCanciones_Procesar(&screen);
         }
 
         /* ------------------------------------------------------------------
          * CONFIRMACIÓN CON B1 (o navegación en lista de canciones)
          * ------------------------------------------------------------------ */
-        if (avanzar || confirmar_boton) {
-            if (en_juego_real || en_juego_real_2p || en_juego_real_botones || en_juego_real_guitar) {
+        if (avanzar || confirmar_boton) {   // hubo una confirmacion este tick (B1 o, donde aplica, cualquier boton arcade)
+            if (en_juego_real || en_juego_real_2p || en_juego_real_botones || en_juego_real_guitar) {   // habia una partida real en curso
                 /* B1 durante un juego real: salir al recorrido */
-                en_juego_real = en_juego_real_2p = en_juego_real_botones = en_juego_real_guitar = 0;
-                Buzzer_Fondo_Detener();
+                en_juego_real = en_juego_real_2p = en_juego_real_botones = en_juego_real_guitar = 0;   // corta la partida
+                Buzzer_Fondo_Detener();   // corta la musica de fondo
                 for (uint8_t p = 0; p < 2; p++)
                     for (uint8_t c = 0; c < 4; c++)
-                        Boton_LED(p, c, 0);
-                ILI9341_SetFlip180(0);
-                Demo_Enter(screen);
-                avanzar = 0;
+                        Boton_LED(p, c, 0);   // apaga los 8 LEDs
+                ILI9341_SetFlip180(0);   // sin flip
+                Demo_Enter(screen);   // redibuja la pantalla actual (sin cambiar `screen`, vuelve al recorrido de diseño)
+                avanzar = 0;   // consume el flanco
             }
-            else if (screen == DEMO_SPLASH) {
+            else if (screen == DEMO_SPLASH) {   // confirmacion en el splash
                 /* Transicion de la pantalla de bienvenida al menu de
                  * seleccion de jugadores. */
-                BotonesChase_Detener();
-                screen = DEMO_JUGADORES_1;
+                BotonesChase_Detener();   // apaga la animacion de LEDs del splash
+                screen = DEMO_JUGADORES_1;   // avanza al menu de jugadores
                 Demo_Enter(screen);
                 avanzar = 0;
             }
-            else if (screen == DEMO_JUGADORES_1 || screen == DEMO_JUGADORES_2) {
-                jugadores_seleccionados = (screen == DEMO_JUGADORES_2) ? 2 : 1;
+            else if (screen == DEMO_JUGADORES_1 || screen == DEMO_JUGADORES_2) {   // confirmacion en el menu de jugadores
+                jugadores_seleccionados = (screen == DEMO_JUGADORES_2) ? 2 : 1;   // fija la cantidad elegida segun en que tarjeta estaba el cursor
                 printf("[MENU] jugadores = %u\r\n", jugadores_seleccionados);
                 /* Reutiliza nombres ingresados en una partida anterior dentro
                  * de la misma sesion de encendido: los arreglos
@@ -2514,91 +3239,101 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
                  * nombre_confirmado[] en lugar de verificar si el buffer esta
                  * vacio, porque el valor por defecto del buffer ("AAA") nunca
                  * lo esta. */
-                uint8_t nombres_listos = nombre_confirmado[0] &&
-                                          (jugadores_seleccionados < 2 || nombre_confirmado[1]);
-                if (nombres_listos) {
+                uint8_t nombres_listos = nombre_confirmado[0] &&   // jugador 1 ya confirmo su nombre en esta sesion de encendido
+                                          (jugadores_seleccionados < 2 || nombre_confirmado[1]);   // Y (es 1 jugador, o el jugador 2 tambien ya confirmo)
+                if (nombres_listos) {   // ya hay nombres validos de una partida anterior -- se saltea la captura
                     printf("[INICIALES] reutilizando J1=%s J2=%s\r\n", nombre_jugadores[0], nombre_jugadores[1]);
-                    screen = DEMO_MODO_SIMON;
-                } else {
+                    screen = DEMO_MODO_SIMON;   // va directo al menu de modo
+                } else {   // hace falta pedir el nombre de al menos un jugador
                     screen = DEMO_INICIALES;
                 }
                 Demo_Enter(screen);
                 avanzar = 0;
             }
-            else if (screen == DEMO_INICIALES) {
+            else if (screen == DEMO_INICIALES) {   // confirmacion de una letra en la captura de nombre
                 printf("[INICIALES] J%u letra %u = %c confirmada\r\n",
                        (unsigned)(nombre_jugador_actual + 1), (unsigned)(nombre_pos_actual + 1),
                        nombre_jugadores[nombre_jugador_actual][nombre_pos_actual]);
-                Renderer_ConfirmarNombreLetra(nombre_pos_actual, nombre_jugadores[nombre_jugador_actual][nombre_pos_actual]);
+                Renderer_ConfirmarNombreLetra(nombre_pos_actual, nombre_jugadores[nombre_jugador_actual][nombre_pos_actual]);   // deja de resaltar esa letra
 
-                if (nombre_pos_actual < 2) {
-                    nombre_pos_actual++;
+                if (nombre_pos_actual < 2) {   // todavia quedan letras del nombre (3 letras, indices 0-2) por confirmar
+                    nombre_pos_actual++;   // avanza a la siguiente posicion
                     Renderer_UpdateNombreLetra(nombre_jugador_actual, nombre_pos_actual,
-                                                nombre_jugadores[nombre_jugador_actual][nombre_pos_actual]);
-                } else if (jugadores_seleccionados == 2 && nombre_jugador_actual == 0) {
-                    nombre_confirmado[0]  = 1;
-                    nombre_jugador_actual = 1;
-                    nombre_pos_actual     = 0;
-                    Renderer_DrawNombre(1, nombre_jugadores[1], 0);
-                } else {
-                    nombre_confirmado[nombre_jugador_actual] = 1;
+                                                nombre_jugadores[nombre_jugador_actual][nombre_pos_actual]);   // resalta la nueva letra en edicion
+                } else if (jugadores_seleccionados == 2 && nombre_jugador_actual == 0) {   // jugador 1 termino su nombre Y falta el jugador 2
+                    nombre_confirmado[0]  = 1;   // marca al jugador 1 como confirmado
+                    nombre_jugador_actual = 1;   // pasa a capturar el nombre del jugador 2
+                    nombre_pos_actual     = 0;   // arranca desde la primera letra
+                    Renderer_DrawNombre(1, nombre_jugadores[1], 0);   // dibuja la pantalla de captura para el jugador 2
+                } else {   // ya se termino de capturar el/los nombre(s) necesario(s)
+                    nombre_confirmado[nombre_jugador_actual] = 1;   // marca a este jugador como confirmado
                     printf("[INICIALES] J1=%s J2=%s\r\n", nombre_jugadores[0], nombre_jugadores[1]);
-                    screen = DEMO_MODO_SIMON;
+                    screen = DEMO_MODO_SIMON;   // avanza al menu de modo
                     Demo_Enter(screen);
                 }
                 avanzar = 0;
             }
-            else if (en_pantalla_modo) {
-                modo_confirmado = (screen == DEMO_MODO_SIMONJOY) ? MODO_SEL_SIMONJOY :
+            else if (en_pantalla_modo) {   // confirmacion en el menu de modo de juego
+                modo_confirmado = (screen == DEMO_MODO_SIMONJOY) ? MODO_SEL_SIMONJOY :   // guarda que modo quedo elegido, segun en que tarjeta estaba el cursor
                                    (screen == DEMO_MODO_GUITAR)  ? MODO_SEL_GUITAR  : MODO_SEL_BOTONES;
                 printf("[MENU] modo = %s\r\n",
                        modo_confirmado == MODO_SEL_SIMONJOY ? "SIMONJOY" :
                        modo_confirmado == MODO_SEL_GUITAR   ? "GUITAR"   : "BOTONES");
-                if (modo_confirmado == MODO_SEL_GUITAR) {
-                    /* Unicamente Guitar Hero pasa primero por la lista de
-                     * canciones (pedido explicito del usuario) para que los
-                     * 2 jugadores elijan con que cancion arrancar la musica
-                     * de fondo -- SimonJoy y Botones siguen yendo derecho al
-                     * conteo, sin tocar su flujo. */
-                    screen = DEMO_MENU_CANCIONES;
+                if (modo_confirmado == MODO_SEL_GUITAR) {   // Guitar Hero: pasa primero por dificultad y cancion
+                    /* Unicamente Guitar Hero pasa primero por dificultad y
+                     * lista de canciones (pedido explicito del usuario) --
+                     * SimonJoy y Botones siguen yendo derecho al conteo, sin
+                     * tocar su flujo. */
+                    screen = DEMO_MENU_DIFICULTAD;   // salta a elegir dificultad
                     Demo_Enter(screen);
-                    MenuCanciones_Armar();   // exige ver el stick centrado antes de aceptar el primer arriba/abajo (evita heredar el "arrastre" de haber inclinado el joystick para llegar hasta GT HERO en el menu anterior)
-                    Buzzer_Beep(100);
-                } else {
+                    MenuDificultad_Armar();   // exige ver el stick centrado antes de aceptar el primer izquierda/derecha (evita heredar el "arrastre" de haber llegado hasta GT HERO en el menu anterior)
+                    Buzzer_Beep(100);   // beep de confirmacion
+                } else {   // Simon o Simon+Joystick: van derecho al conteo
                     screen = DEMO_CONTEO_3;
                     Demo_Enter(screen);
-                    Buzzer_Beep(100);
-                    conteo_auto = 1;
-                    conteo_tick = HAL_GetTick();
+                    Buzzer_Beep(100);   // beep de confirmacion
+                    conteo_auto = 1;   // arranca el conteo automatico
+                    conteo_tick = HAL_GetTick();   // marca el instante de arranque del primer numero
                 }
                 avanzar = 0;
             }
-            else if (screen == DEMO_MENU_CANCIONES) {
+            else if (screen == DEMO_MENU_DIFICULTAD) {   // confirmacion en el menu de dificultad
+                /* Cualquier boton confirma la tarjeta resaltada por el
+                 * cursor (movido con el joystick, ver MenuDificultad_
+                 * Procesar) y avanza a elegir la cancion inicial. */
+                printf("[MENU] dificultad de Guitar Hero = %u\r\n", dificultad_cursor);
+                screen = DEMO_MENU_CANCIONES;   // avanza a elegir cancion
+                Demo_Enter(screen);
+                MenuCanciones_Armar();   // exige ver el stick centrado antes de aceptar el primer arriba/abajo
+                Buzzer_Beep(100);   // beep de confirmacion
+                avanzar = 0;
+            }
+            else if (screen == DEMO_MENU_CANCIONES) {   // confirmacion en el menu de canciones
                 /* Cualquier boton confirma la cancion resaltada por el
                  * cursor (movido con el joystick, ver MenuCanciones_Procesar)
                  * y arranca el conteo 3-2-1-GO de Guitar Hero. */
                 printf("[MENU] cancion inicial de Guitar Hero = idx %u\r\n", cancion_cursor);
-                screen = DEMO_CONTEO_3;
+                screen = DEMO_CONTEO_3;   // arranca el conteo
                 Demo_Enter(screen);
-                Buzzer_Beep(100);
-                conteo_auto = 1;
-                conteo_tick = HAL_GetTick();
+                Buzzer_Beep(100);   // beep de confirmacion
+                conteo_auto = 1;   // arranca el conteo automatico
+                conteo_tick = HAL_GetTick();   // marca el instante de arranque del primer numero
                 avanzar = 0;
             }
-            else if (screen == DEMO_PREVIEW_SIMONJOY) {
+            else if (screen == DEMO_PREVIEW_SIMONJOY) {   // confirmacion en la vista previa (recorrido de diseño) -- arranca la partida REAL
                 en_juego_real = 1;
                 SimonJoy_Iniciar();
                 avanzar = 0;
             }
-            else if (screen == DEMO_PREVIEW_SIMON) {
+            else if (screen == DEMO_PREVIEW_SIMON) {   // idem para Simon Clasico
                 en_juego_real_botones = 1;
-                btn_modo_1p    = (jugadores_seleccionados == 1);
+                btn_modo_1p    = (jugadores_seleccionados == 1);   // 1 jugador si asi se eligio
                 guitar_modo_1p = 0;   // limpia el flag de Guitar Hero por si quedo en 1 de una sesion anterior (ver el mismo reset en el conteo automatico, mas abajo)
                 if (jugadores_seleccionados == 2) Botones_IniciarAmbos();
                 else Botones_IniciarSolo();
                 avanzar = 0;
             }
-            else if (screen == DEMO_JUGANDO) {
+            else if (screen == DEMO_JUGANDO) {   // confirmacion en el recorrido de diseño de Guitar Hero (maqueta, no el modo real)
                 GuitarHero_IntentarGolpe();
                 avanzar = 0;
             }
@@ -2607,11 +3342,11 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
         /* ------------------------------------------------------------------
          * CONTEO AUTOMÁTICO 3-2-1-GO
          * ------------------------------------------------------------------ */
-        if (conteo_auto) {
-            if (HAL_GetTick() - conteo_tick >= CONTEO_PASO_MS) {
-                conteo_tick = HAL_GetTick();
-                if (screen == DEMO_CONTEO_GO) {
-                    conteo_auto = 0;
+        if (conteo_auto) {   // el conteo 3-2-1-GO esta avanzando solo
+            if (HAL_GetTick() - conteo_tick >= CONTEO_PASO_MS) {   // ya paso el tiempo de mostrar este numero
+                conteo_tick = HAL_GetTick();   // marca el instante de este nuevo numero
+                if (screen == DEMO_CONTEO_GO) {   // ya se llego al final del conteo ("GO") -- arranca el modo elegido de verdad
+                    conteo_auto = 0;   // el conteo termino, no sigue avanzando
                     printf("[GO] modo=%s jugadores=%u\r\n",
                            modo_confirmado == MODO_SEL_SIMONJOY ? "SIMONJOY" :
                            modo_confirmado == MODO_SEL_GUITAR   ? "GUITAR"   : "BOTONES",
@@ -2627,10 +3362,10 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
                      * partida de 2 jugadores del OTRO modo forzaba p=0 para
                      * ambos lados -- exactamente el bug reportado de
                      * "arranca en 2 jugadores pero solo responde un lado". */
-                    btn_modo_1p    = 0;
-                    guitar_modo_1p = 0;
-                    switch (modo_confirmado) {
-                    case MODO_SEL_SIMONJOY:
+                    btn_modo_1p    = 0;   // limpia el flag de 1 jugador de Botones, se recalcula abajo solo si corresponde
+                    guitar_modo_1p = 0;   // idem Guitar Hero
+                    switch (modo_confirmado) {   // arranca el modo que se eligio
+                    case MODO_SEL_SIMONJOY:   // Simon + Joystick
                         screen = DEMO_PREVIEW_SIMONJOY;
                         if (jugadores_seleccionados == 2) {
                             en_juego_real_2p = 1;
@@ -2640,60 +3375,60 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
                             SimonJoy_Iniciar();
                         }
                         break;
-                    case MODO_SEL_GUITAR:
+                    case MODO_SEL_GUITAR:   // Guitar Hero
                         screen = DEMO_JUGANDO;
                         en_juego_real_guitar = 1;
-                        guitar_modo_1p = (jugadores_seleccionados != 2);
+                        guitar_modo_1p = (jugadores_seleccionados != 2);   // 1 jugador si no se eligieron 2
                         if (jugadores_seleccionados == 2) {
                             GuitarHero2_IniciarAmbos();
                         } else {
                             GuitarHero_IniciarSolo();
                         }
                         break;
-                    default: /* MODO_SEL_BOTONES */
+                    default: /* MODO_SEL_BOTONES */   // Simon con botones arcade
                         screen = DEMO_PREVIEW_SIMON;
                         en_juego_real_botones = 1;
                         if (jugadores_seleccionados == 2) {
-                            btn_modo_1p = 0;
+                            btn_modo_1p = 0;   // 2 jugadores: layout Cockpit dividido
                             Botones_IniciarAmbos();
                         } else {
-                            btn_modo_1p = 1;
+                            btn_modo_1p = 1;   // 1 jugador: pantalla completa
                             Botones_IniciarSolo();
                         }
                         break;
                     }
-                } else {
-                    screen++;
-                    Demo_Enter(screen);
-                    if (screen == DEMO_CONTEO_GO) {
-                        static const PasoSonido_t BEEP_GO[3] = {
+                } else {   // todavia no se llego a DEMO_CONTEO_GO -- sigue avanzando el conteo numero por numero
+                    screen++;   // avanza al siguiente numero del conteo (3->2->1->GO, orden del enum)
+                    Demo_Enter(screen);   // dibuja el numero nuevo
+                    if (screen == DEMO_CONTEO_GO) {   // ultimo paso: jingle distinto para "GO"
+                        static const PasoSonido_t BEEP_GO[3] = {   // jingle de "GO": 2 notas ascendentes
                             { SOL4, 90 }, { 0, 20 }, { DO5, 220 }
                         };
-                        Buzzer_Patron(BEEP_GO, 3);
-                    } else {
+                        Buzzer_Patron(BEEP_GO, 3);   // suena el jingle de GO
+                    } else {   // 3, 2 o 1: beep corto simple
                         Buzzer_Beep(100);
                     }
                 }
             }
-            continue;
+            continue;   // salta el resto del loop este tick (el conteo ya se atendio)
         }
 
         /* ------------------------------------------------------------------
          * JUEGOS ACTIVOS
          * ------------------------------------------------------------------ */
-        if (en_juego_real) {
+        if (en_juego_real) {   // SimonJoy 1 jugador en curso
             SimonJoy_Actualizar();
-            continue;
+            continue;   // salta el resto del loop, ya se atendio esta partida
         }
-        if (en_juego_real_2p) {
+        if (en_juego_real_2p) {   // SimonJoy 2 jugadores en curso
             SimonJoy2_Actualizar();
             continue;
         }
-        if (en_juego_real_botones) {
+        if (en_juego_real_botones) {   // Botones (1 o 2 jugadores) en curso
             Botones_Actualizar();
             continue;
         }
-        if (en_juego_real_guitar) {
+        if (en_juego_real_guitar) {   // Guitar Hero (1 o 2 jugadores) en curso
             GuitarHero_Actualizar();
             continue;
         }
@@ -2701,36 +3436,36 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
         /* ------------------------------------------------------------------
          * RECORRIDO DE DISEÑO (PANTALLAS ESTÁTICAS)
          * ------------------------------------------------------------------ */
-        switch (screen) {
+        switch (screen) {   // ninguna partida real en curso -- solo queda animar las pantallas estaticas del recorrido de diseño
 
-        case DEMO_SPLASH:
-        case DEMO_JUGANDO:
-        case DEMO_RESULTADO:
-            if (screen == DEMO_JUGANDO) {
-                for (uint8_t i = 0; i < 2; i++) {
+        case DEMO_SPLASH:   // splash: Renderer_Update anima el parpadeo del texto
+        case DEMO_JUGANDO:   // recorrido de diseño de Guitar Hero: las 2 notas fijas siguen cayendo
+        case DEMO_RESULTADO:   // pantalla de resultado de adorno: nada que animar, solo la dibuja Demo_Enter
+            if (screen == DEMO_JUGANDO) {   // solo en el recorrido de diseño de Guitar Hero se mueven las notas de prueba
+                for (uint8_t i = 0; i < 2; i++) {   // las 2 notas fijas del recorrido de diseño
                     Nota_t *n = &gs.notas[i];
-                    n->x_prev = n->x_rel;
-                    n->x_rel  = (int16_t)(n->x_rel + gs.nota_speed);
-                    if (n->x_rel > (int16_t)PLAYER_W) n->x_rel = -NOTE_W;
+                    n->x_prev = n->x_rel;   // guarda posicion anterior para el borrado delta
+                    n->x_rel  = (int16_t)(n->x_rel + gs.nota_speed);   // avanza la nota (aca suma, al reves del modo real, ver comentario de la seccion)
+                    if (n->x_rel > (int16_t)PLAYER_W) n->x_rel = -NOTE_W;   // reaparece del otro lado al salir de pantalla (loop infinito de la maqueta)
                 }
             }
-            Renderer_Update(&gs);
+            Renderer_Update(&gs);   // anima/dibuja el frame actual del recorrido de diseño
             break;
 
-        case DEMO_PREVIEW_SIMON:
-        case DEMO_PREVIEW_SIMONJOY: {
-            uint8_t paso = Demo_PasoSimon();
-            if (paso != last_paso_sim) {
+        case DEMO_PREVIEW_SIMON:   // vista previa de Simon Clasico (antes del menu de jugadores confirma)
+        case DEMO_PREVIEW_SIMONJOY: {   // vista previa de Simon+Joystick
+            uint8_t paso = Demo_PasoSimon();   // que paso animar ahora, derivado del reloj
+            if (paso != last_paso_sim) {   // solo redibuja si el paso a animar cambio
                 if (screen == DEMO_PREVIEW_SIMON)
-                    Renderer_DrawModoSimonClasico(paso, paso);
+                    Renderer_DrawModoSimonClasico(paso, paso);   // redibuja las 2 mitades con el mismo paso de adorno
                 else
-                    Renderer_UpdateModoSimonJoystick1P(last_paso_sim, paso);
-                last_paso_sim = paso;
+                    Renderer_UpdateModoSimonJoystick1P(last_paso_sim, paso);   // redibuja solo la flecha que cambio
+                last_paso_sim = paso;   // recuerda el paso ya animado
             }
             break;
         }
 
-        default:
+        default:   // resto de pantallas (menus): no necesitan animacion por tick, ya quedaron dibujadas por Demo_Enter/MenuXxx_Procesar
             break;
         }
     }
@@ -2740,134 +3475,134 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
 /* === RELOJ DEL SISTEMA ===================================================== */
 /* ========================================================================== */
 
-static void SystemClock_Config(void) {
-    RCC_OscInitTypeDef osc = {0};
-    RCC_ClkInitTypeDef clk = {0};
+static void SystemClock_Config(void) {   // configura el reloj del microcontrolador (HSI + PLL) -- generado por CubeMX/CubeIDE, no tocar a mano
+    RCC_OscInitTypeDef osc = {0};   // configuracion del oscilador (fuente de reloj)
+    RCC_ClkInitTypeDef clk = {0};   // configuracion de los buses de reloj derivados
 
     /* HSI 16MHz sin PLL — suficiente para SPI@8MHz */
-    osc.OscillatorType      = RCC_OSCILLATORTYPE_HSI;
-    osc.HSIState            = RCC_HSI_ON;
-    osc.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-    osc.PLL.PLLState        = RCC_PLL_NONE;
-    HAL_RCC_OscConfig(&osc);
+    osc.OscillatorType      = RCC_OSCILLATORTYPE_HSI;   // usa el oscilador interno HSI (16MHz), no un cristal externo
+    osc.HSIState            = RCC_HSI_ON;   // habilita el HSI
+    osc.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;   // calibracion de fabrica del HSI, sin ajuste manual
+    osc.PLL.PLLState        = RCC_PLL_NONE;   // sin PLL: el sistema corre directo a 16MHz (HSI), no se multiplica el reloj
+    HAL_RCC_OscConfig(&osc);   // aplica la configuracion del oscilador
 
-    clk.ClockType      = RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK
+    clk.ClockType      = RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_HCLK   // que buses de reloj configurar: sistema, AHB y los 2 APB
                        | RCC_CLOCKTYPE_PCLK1  | RCC_CLOCKTYPE_PCLK2;
-    clk.SYSCLKSource   = RCC_SYSCLKSOURCE_HSI;
-    clk.AHBCLKDivider  = RCC_SYSCLK_DIV1;   /* HCLK  = 16MHz */
-    clk.APB1CLKDivider = RCC_HCLK_DIV1;      /* APB1  = 16MHz */
-    clk.APB2CLKDivider = RCC_HCLK_DIV1;      /* APB2  = 16MHz (SPI1) */
-    HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_0);
+    clk.SYSCLKSource   = RCC_SYSCLKSOURCE_HSI;   // el reloj de sistema viene directo del HSI (sin PLL)
+    clk.AHBCLKDivider  = RCC_SYSCLK_DIV1;   /* HCLK  = 16MHz */   // AHB sin dividir
+    clk.APB1CLKDivider = RCC_HCLK_DIV1;      /* APB1  = 16MHz */   // APB1 sin dividir
+    clk.APB2CLKDivider = RCC_HCLK_DIV1;      /* APB2  = 16MHz (SPI1) */   // APB2 sin dividir -- de aca sale el reloj que alimenta a SPI1
+    HAL_RCC_ClockConfig(&clk, FLASH_LATENCY_0);   // aplica la configuracion; FLASH_LATENCY_0 alcanza a 16MHz (no hace falta mas espera de wait-states)
 }
 
 /* ========================================================================== */
 /* === GPIO — PANTALLA, JOYSTICKS, BOTONES ARCADE Y BUZZER =================== */
 /* ========================================================================== */
 
-static void MX_GPIO_Init(void) {
-    GPIO_InitTypeDef g = {0};
+static void MX_GPIO_Init(void) {   // configura todos los pines GPIO: entradas de botones/joystick, salidas de LEDs/pantalla/buzzer
+    GPIO_InitTypeDef g = {0};   // struct de configuracion reutilizada para cada grupo de pines (se pisa entre usos)
 
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-    __HAL_RCC_GPIOC_CLK_ENABLE();
+    __HAL_RCC_GPIOA_CLK_ENABLE();   // habilita el reloj del puerto A (sin esto, sus pines no responden)
+    __HAL_RCC_GPIOB_CLK_ENABLE();   // idem puerto B
+    __HAL_RCC_GPIOC_CLK_ENABLE();   // idem puerto C
 
-    g.Mode  = GPIO_MODE_OUTPUT_PP;
-    g.Pull  = GPIO_NOPULL;
-    g.Speed = GPIO_SPEED_FREQ_HIGH;
+    g.Mode  = GPIO_MODE_OUTPUT_PP;   // salida push-pull (puede tanto poner en alto como en bajo activamente)
+    g.Pull  = GPIO_NOPULL;   // sin resistencia de pull interna (no hace falta en una salida)
+    g.Speed = GPIO_SPEED_FREQ_HIGH;   // velocidad de conmutacion alta (necesaria para SPI)
 
-    g.Pin = LCD_RST_PIN;
+    g.Pin = LCD_RST_PIN;   // pin de RESET de la pantalla
     HAL_GPIO_Init(LCD_RST_PORT, &g);
-    LCD_RST_HIGH();
+    LCD_RST_HIGH();   // arranca en alto (inactivo, sin resetear)
 
-    g.Pin = LCD_CS_PIN;
+    g.Pin = LCD_CS_PIN;   // pin de Chip Select de la pantalla
     HAL_GPIO_Init(LCD_CS_PORT, &g);
-    LCD_CS_HIGH();
+    LCD_CS_HIGH();   // arranca en alto (chip no seleccionado)
 
-    g.Pin = LCD_DC_PIN;
+    g.Pin = LCD_DC_PIN;   // pin de Data/Command de la pantalla
     HAL_GPIO_Init(LCD_DC_PORT, &g);
 
     /* B1 (PC13) — pull-up externo R30=4k7 en la Nucleo, no usar PULLUP sw */
-    g.Mode = GPIO_MODE_INPUT;
-    g.Pull = GPIO_NOPULL;
+    g.Mode = GPIO_MODE_INPUT;   // B1 es una entrada
+    g.Pull = GPIO_NOPULL;   // sin pull-up interno: ya hay uno externo en la placa Nucleo
     g.Pin  = BTN_USER_PIN;
     HAL_GPIO_Init(BTN_USER_PORT, &g);
 
     /* pa1/pa4: entradas analogicas del joystick (pa1=vry, pa4=vrx) */
-    g.Mode = GPIO_MODE_ANALOG;
-    g.Pull = GPIO_NOPULL;
-    g.Pin  = GPIO_PIN_1 | GPIO_PIN_4;
+    g.Mode = GPIO_MODE_ANALOG;   // modo analogico, requerido para que el ADC pueda leer estos pines
+    g.Pull = GPIO_NOPULL;   // sin pull en una entrada analogica
+    g.Pin  = GPIO_PIN_1 | GPIO_PIN_4;   // VRy (PA1) y VRx (PA4) del joystick 1
     HAL_GPIO_Init(GPIOA, &g);
 
     /* pc0/pc1: entradas analogicas del joystick 2 (pc0=vry2, pc1=vrx2) */
     g.Mode = GPIO_MODE_ANALOG;
     g.Pull = GPIO_NOPULL;
-    g.Pin  = GPIO_PIN_0 | GPIO_PIN_1;
+    g.Pin  = GPIO_PIN_0 | GPIO_PIN_1;   // VRy2 (PC0) y VRx2 (PC1) del joystick 2
     HAL_GPIO_Init(GPIOC, &g);
 
     /* botones arcade: 8 switches (entrada, pull-up interno) + 8 LED (salida
      * hacia ULN2003A) */
-    g.Mode = GPIO_MODE_INPUT;
-    g.Pull = GPIO_PULLUP;
-    for (uint8_t p = 0; p < 2; p++) {
-        for (uint8_t c = 0; c < 4; c++) {
-            g.Pin = BTN_SW[p][c].pin;
+    g.Mode = GPIO_MODE_INPUT;   // los switches de los botones son entradas
+    g.Pull = GPIO_PULLUP;   // pull-up interno: el boton conecta a tierra al presionar (activo en bajo)
+    for (uint8_t p = 0; p < 2; p++) {   // recorre los 2 jugadores
+        for (uint8_t c = 0; c < 4; c++) {   // y los 4 colores de cada uno
+            g.Pin = BTN_SW[p][c].pin;   // toma el pin de ESTE switch de la tabla BTN_SW
             HAL_GPIO_Init(BTN_SW[p][c].port, &g);
         }
     }
 
-    g.Mode  = GPIO_MODE_OUTPUT_PP;
+    g.Mode  = GPIO_MODE_OUTPUT_PP;   // los LEDs (via ULN2003A) son salidas
     g.Pull  = GPIO_NOPULL;
-    g.Speed = GPIO_SPEED_FREQ_LOW;
-    for (uint8_t p = 0; p < 2; p++) {
-        for (uint8_t c = 0; c < 4; c++) {
-            g.Pin = BTN_LED[p][c].pin;
+    g.Speed = GPIO_SPEED_FREQ_LOW;   // no hace falta velocidad alta para encender/apagar un LED
+    for (uint8_t p = 0; p < 2; p++) {   // recorre los 2 jugadores
+        for (uint8_t c = 0; c < 4; c++) {   // y los 4 colores de cada uno
+            g.Pin = BTN_LED[p][c].pin;   // toma el pin de ESTE LED de la tabla BTN_LED
             HAL_GPIO_Init(BTN_LED[p][c].port, &g);
-            HAL_GPIO_WritePin(BTN_LED[p][c].port, BTN_LED[p][c].pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(BTN_LED[p][c].port, BTN_LED[p][c].pin, GPIO_PIN_RESET);   // apaga el LED de entrada (RESET = LED apagado via el driver ULN2003A)
         }
     }
 
     /* buzzer en pa6 */
-    g.Mode  = GPIO_MODE_OUTPUT_PP;
+    g.Mode  = GPIO_MODE_OUTPUT_PP;   // el buzzer se maneja como salida digital normal (alternada por software, no PWM de hardware)
     g.Pull  = GPIO_NOPULL;
     g.Speed = GPIO_SPEED_FREQ_LOW;
     g.Pin   = BUZZER_PIN;
     HAL_GPIO_Init(BUZZER_PORT, &g);
-    HAL_GPIO_WritePin(BUZZER_PORT, BUZZER_PIN, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(BUZZER_PORT, BUZZER_PIN, GPIO_PIN_RESET);   // arranca en silencio (bajo)
 }
 
 /* -----------------------------------------------------------------------
  * TIM4: INTERRUPCION PERIODICA QUE ALTERNA PA6 POR SOFTWARE
  * ----------------------------------------------------------------------- */
-static void MX_TIM4_Buzzer_Init(void) {
-    __HAL_RCC_TIM4_CLK_ENABLE();
+static void MX_TIM4_Buzzer_Init(void) {   // configura TIM4 para generar la interrupcion periodica que alterna PA6 (tono del buzzer)
+    __HAL_RCC_TIM4_CLK_ENABLE();   // habilita el reloj de TIM4
 
     htim4.Instance           = TIM4;
-    htim4.Init.Prescaler     = 15;    /* 16MHz/16 = 1MHz -> tick de 1us */
-    htim4.Init.CounterMode   = TIM_COUNTERMODE_UP;
-    htim4.Init.Period        = 999;   /* arranca detenido, se ajusta en runtime */
-    htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-    HAL_TIM_Base_Init(&htim4);
+    htim4.Init.Prescaler     = 15;    /* 16MHz/16 = 1MHz -> tick de 1us */   // divide el reloj de 16MHz entre 16 (prescaler+1) para que el timer cuente a 1MHz
+    htim4.Init.CounterMode   = TIM_COUNTERMODE_UP;   // cuenta ascendente (0 hasta el periodo, despues desborda)
+    htim4.Init.Period        = 999;   /* arranca detenido, se ajusta en runtime */   // valor inicial de ARR, sin importancia real porque Buzzer_SetSalida lo reprograma antes de arrancar el timer con interrupcion
+    htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;   // sin division adicional del reloj interno del timer
+    HAL_TIM_Base_Init(&htim4);   // aplica toda la configuracion
 
-    HAL_NVIC_SetPriority(TIM4_IRQn, 3, 0);
-    HAL_NVIC_EnableIRQ(TIM4_IRQn);
+    HAL_NVIC_SetPriority(TIM4_IRQn, 3, 0);   // prioridad de interrupcion 3 (relativamente baja, no es tiempo-critico)
+    HAL_NVIC_EnableIRQ(TIM4_IRQn);   // habilita la interrupcion de TIM4 en el NVIC (sin esto, TIM4_IRQHandler nunca se ejecutaria)
 }
 
 /* -----------------------------------------------------------------------
  * TIM3: DISPARADOR (TRGO) DEL ADC1 CADA 20 MS
  * ----------------------------------------------------------------------- */
-static void TIM3_ADCTrigger_Init(void) {
-    __HAL_RCC_TIM3_CLK_ENABLE();
+static void TIM3_ADCTrigger_Init(void) {   // configura TIM3 en modo TRGO para disparar una conversion del ADC1 cada 20ms
+    __HAL_RCC_TIM3_CLK_ENABLE();   // habilita el reloj de TIM3
 
     htim3.Instance           = TIM3;
-    htim3.Init.Prescaler     = 1599;  /* 16mhz/1600 = 10khz -> tick de 100us */
-    htim3.Init.CounterMode   = TIM_COUNTERMODE_UP;
-    htim3.Init.Period        = 199;   /* 200 ticks x 100us = 20 ms exactos  */
-    htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-    HAL_TIM_Base_Init(&htim3);
+    htim3.Init.Prescaler     = 1599;  /* 16mhz/1600 = 10khz -> tick de 100us */   // divide el reloj de 16MHz entre 1600 para que el timer cuente a 10kHz
+    htim3.Init.CounterMode   = TIM_COUNTERMODE_UP;   // cuenta ascendente
+    htim3.Init.Period        = 199;   /* 200 ticks x 100us = 20 ms exactos  */   // 200 cuentas de 100us cada una = 20ms exactos entre disparos
+    htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;   // sin division adicional
+    HAL_TIM_Base_Init(&htim3);   // aplica la configuracion base del timer
 
-    TIM_MasterConfigTypeDef sMasterConfig = {0};
-    sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
-    sMasterConfig.MasterSlaveMode     = TIM_MASTERSLAVEMODE_DISABLE;
+    TIM_MasterConfigTypeDef sMasterConfig = {0};   // configuracion del modo "master" del timer (para generar el TRGO)
+    sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;   // el TRGO se dispara en cada evento de actualizacion (cada vez que el contador completa su periodo)
+    sMasterConfig.MasterSlaveMode     = TIM_MASTERSLAVEMODE_DISABLE;   // no encadenado a otro timer como esclavo
     HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig);
 }
 
@@ -2875,42 +3610,42 @@ static void TIM3_ADCTrigger_Init(void) {
  * ADC1: JOYSTICK 1 (CH1=PA1=Y1, CH4=PA4=X1) + JOYSTICK 2 (CH10=PC0=Y2,
  * CH11=PC1=X2) EN MODO SCAN, 4 CANALES
  * ----------------------------------------------------------------------- */
-static void ADC1_Joystick_Init(void) {
-    ADC_ChannelConfTypeDef sConfig = {0};
-    __HAL_RCC_ADC1_CLK_ENABLE();
+static void ADC1_Joystick_Init(void) {   // configura el ADC1 en modo escaneo de 4 canales (ejes X/Y de los 2 joystick)
+    ADC_ChannelConfTypeDef sConfig = {0};   // configuracion de CADA canal individual (se reusa y se pisa 4 veces, una por rank)
+    __HAL_RCC_ADC1_CLK_ENABLE();   // habilita el reloj del ADC1
 
     hadc1.Instance                   = ADC1;
-    hadc1.Init.ClockPrescaler        = ADC_CLOCK_SYNC_PCLK_DIV4;
-    hadc1.Init.Resolution            = ADC_RESOLUTION_12B;
-    hadc1.Init.DataAlign             = ADC_DATAALIGN_RIGHT;
-    hadc1.Init.ScanConvMode          = ENABLE;
-    hadc1.Init.ContinuousConvMode    = DISABLE;
-    hadc1.Init.DiscontinuousConvMode = DISABLE;
-    hadc1.Init.NbrOfConversion       = 4;
-    hadc1.Init.ExternalTrigConv      = ADC_EXTERNALTRIGCONV_T3_TRGO;
-    hadc1.Init.ExternalTrigConvEdge  = ADC_EXTERNALTRIGCONVEDGE_RISING;
-    hadc1.Init.DMAContinuousRequests = DISABLE;
-    hadc1.Init.EOCSelection          = ADC_EOC_SINGLE_CONV;
-    HAL_ADC_Init(&hadc1);
+    hadc1.Init.ClockPrescaler        = ADC_CLOCK_SYNC_PCLK_DIV4;   // divide el reloj de APB2 entre 4 para el reloj del ADC
+    hadc1.Init.Resolution            = ADC_RESOLUTION_12B;   // 12 bits de resolucion (0-4095), la maxima del ADC del F411
+    hadc1.Init.DataAlign             = ADC_DATAALIGN_RIGHT;   // el resultado queda alineado a la derecha del registro (uso directo, sin desplazar)
+    hadc1.Init.ScanConvMode          = ENABLE;   // modo escaneo: recorre los 4 canales configurados en orden de rank
+    hadc1.Init.ContinuousConvMode    = DISABLE;   // no conversion continua -- cada disparo de TIM3 arranca una conversion nueva
+    hadc1.Init.DiscontinuousConvMode = DISABLE;   // no modo discontinuo (los 4 ranks se completan seguidos, no de a uno por disparo)
+    hadc1.Init.NbrOfConversion       = 4;   // 4 canales en la secuencia de escaneo (Y1, X1, Y2, X2)
+    hadc1.Init.ExternalTrigConv      = ADC_EXTERNALTRIGCONV_T3_TRGO;   // disparado externamente por el TRGO de TIM3, no por software
+    hadc1.Init.ExternalTrigConvEdge  = ADC_EXTERNALTRIGCONVEDGE_RISING;   // dispara en el flanco de subida del TRGO
+    hadc1.Init.DMAContinuousRequests = DISABLE;   // no se usa DMA (la lectura es por interrupcion, ver HAL_ADC_ConvCpltCallback)
+    hadc1.Init.EOCSelection          = ADC_EOC_SINGLE_CONV;   // genera la interrupcion de fin de conversion despues de CADA canal (no solo al final de la secuencia completa)
+    HAL_ADC_Init(&hadc1);   // aplica toda la configuracion
 
-    HAL_NVIC_SetPriority(ADC_IRQn, 3, 0);
-    HAL_NVIC_EnableIRQ(ADC_IRQn);
+    HAL_NVIC_SetPriority(ADC_IRQn, 3, 0);   // prioridad de interrupcion 3
+    HAL_NVIC_EnableIRQ(ADC_IRQn);   // habilita la interrupcion del ADC en el NVIC
 
-    sConfig.Channel      = ADC_CHANNEL_1;   /* rank 1: joy1 eje y (pa1) */
-    sConfig.Rank         = 1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;
-    sConfig.Offset       = 0;
-    HAL_ADC_ConfigChannel(&hadc1, &sConfig);
+    sConfig.Channel      = ADC_CHANNEL_1;   /* rank 1: joy1 eje y (pa1) */   // primer canal del escaneo: VRy de J1
+    sConfig.Rank         = 1;   // orden 1 de 4 en la secuencia
+    sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;   // tiempo de muestreo largo (480 ciclos), mas preciso a costa de ser mas lento -- el joystick no necesita velocidad extrema
+    sConfig.Offset       = 0;   // sin offset de calibracion adicional
+    HAL_ADC_ConfigChannel(&hadc1, &sConfig);   // aplica la config de este canal
 
-    sConfig.Channel = ADC_CHANNEL_4;        /* rank 2: joy1 eje x (pa4) */
+    sConfig.Channel = ADC_CHANNEL_4;        /* rank 2: joy1 eje x (pa4) */   // segundo canal: VRx de J1
     sConfig.Rank    = 2;
     HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
-    sConfig.Channel = ADC_CHANNEL_10;       /* rank 3: joy2 eje y (pc0) */
+    sConfig.Channel = ADC_CHANNEL_10;       /* rank 3: joy2 eje y (pc0) */   // tercer canal: VRy2 de J2
     sConfig.Rank    = 3;
     HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 
-    sConfig.Channel = ADC_CHANNEL_11;       /* rank 4: joy2 eje x (pc1) */
+    sConfig.Channel = ADC_CHANNEL_11;       /* rank 4: joy2 eje x (pc1) */   // cuarto canal: VRx2 de J2
     sConfig.Rank    = 4;
     HAL_ADC_ConfigChannel(&hadc1, &sConfig);
 }
@@ -2919,14 +3654,14 @@ static void ADC1_Joystick_Init(void) {
 /* === SPI1 — BUS HACIA EL ILI9341 =========================================== */
 /* ========================================================================== */
 
-static void MX_SPI1_Init(void) {
+static void MX_SPI1_Init(void) {   // configura el periferico SPI1 (solo-escritura) usado por la pantalla ILI9341
     hspi1.Instance               = SPI1;
-    hspi1.Init.Mode              = SPI_MODE_MASTER;
-    hspi1.Init.Direction         = SPI_DIRECTION_2LINES;
-    hspi1.Init.DataSize          = SPI_DATASIZE_8BIT;
-    hspi1.Init.CLKPolarity       = SPI_POLARITY_LOW;   /* CPOL=0 */
-    hspi1.Init.CLKPhase          = SPI_PHASE_1EDGE;    /* CPHA=0 → SPI Mode 0 */
-    hspi1.Init.NSS               = SPI_NSS_SOFT;
+    hspi1.Init.Mode              = SPI_MODE_MASTER;   // el STM32 es el maestro del bus (la pantalla no tiene forma de serlo)
+    hspi1.Init.Direction         = SPI_DIRECTION_2LINES;   // full-duplex a nivel de configuracion (aunque MISO no esta cableado, la pantalla es solo-escritura)
+    hspi1.Init.DataSize          = SPI_DATASIZE_8BIT;   // transmite de a bytes (8 bits)
+    hspi1.Init.CLKPolarity       = SPI_POLARITY_LOW;   /* CPOL=0 */   // el reloj esta en bajo en reposo
+    hspi1.Init.CLKPhase          = SPI_PHASE_1EDGE;    /* CPHA=0 → SPI Mode 0 */   // los datos se capturan en el primer flanco -- Modo 0, el que espera el ILI9341
+    hspi1.Init.NSS               = SPI_NSS_SOFT;   // Chip Select manejado por software (LCD_CS_LOW/HIGH), no por hardware del periferico
     /* Bajado de /2 (8MHz) a /8 (2MHz): hipotesis de diagnostico para la
      * pantalla que ocasionalmente se pone blanca durante partidas largas.
      * No hay evidencia de un bug de software que explique un llenado blanco
@@ -2935,23 +3670,23 @@ static void MX_SPI1_Init(void) {
      * los LEDs de los botones, es candidato tipico a ruido/glitches en la
      * linea SPI que se acumulan con el tiempo. Si el problema persiste con
      * este cambio, la causa esta en otro lado y esto puede revertirse. */
-    hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;  /* 2MHz, antes /2 = 8MHz */
-    hspi1.Init.FirstBit          = SPI_FIRSTBIT_MSB;
-    hspi1.Init.TIMode            = SPI_TIMODE_DISABLE;
-    hspi1.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;
-    hspi1.Init.CRCPolynomial     = 10;
-    HAL_SPI_Init(&hspi1);
+    hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;  /* 8MHz - Velocidad Maxima Fluida */   // divide el reloj de APB2 (16MHz) entre 2 -> 8MHz de reloj SPI; bajarlo mas (prescaler mayor) reduce la velocidad de dibujo pero da mas margen ante ruido electrico (ver el bug de pantalla en blanco ya resuelto por otra via)
+    hspi1.Init.FirstBit          = SPI_FIRSTBIT_MSB;   // transmite el bit mas significativo primero (el orden que espera el ILI9341)
+    hspi1.Init.TIMode            = SPI_TIMODE_DISABLE;   // sin el modo especial TI, SPI estandar
+    hspi1.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;   // sin verificacion CRC (no la usa el protocolo del ILI9341)
+    hspi1.Init.CRCPolynomial     = 10;   // sin efecto real (CRC deshabilitado), queda con el valor por defecto
+    HAL_SPI_Init(&hspi1);   // aplica toda la configuracion
 }
 
-void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi) {
-    if (hspi->Instance == SPI1) {
-        __HAL_RCC_SPI1_CLK_ENABLE();
+void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi) {   // inicializacion de bajo nivel del SPI1 (clocks + pines) -- llamada automaticamente por HAL_SPI_Init()
+    if (hspi->Instance == SPI1) {   // verifica que sea justo el periferico SPI1 (esta funcion podria compartirse entre varios SPI si el proyecto tuviera mas)
+        __HAL_RCC_SPI1_CLK_ENABLE();   // habilita el reloj del periferico SPI1
         GPIO_InitTypeDef g = {0};
-        g.Pin       = GPIO_PIN_5 | GPIO_PIN_7;  /* PA5=SCK, PA7=MOSI */
-        g.Mode      = GPIO_MODE_AF_PP;
+        g.Pin       = GPIO_PIN_5 | GPIO_PIN_7;  /* PA5=SCK, PA7=MOSI */   // los 2 pines que usa este SPI (no hay MISO, la pantalla es solo-escritura)
+        g.Mode      = GPIO_MODE_AF_PP;   // funcion alternativa (el periferico SPI controla el pin, no GPIO normal)
         g.Pull      = GPIO_NOPULL;
-        g.Speed     = GPIO_SPEED_FREQ_HIGH;
-        g.Alternate = GPIO_AF5_SPI1;
+        g.Speed     = GPIO_SPEED_FREQ_HIGH;   // velocidad alta, necesaria para 8MHz de SPI
+        g.Alternate = GPIO_AF5_SPI1;   // numero de funcion alternativa especifico de SPI1 en estos pines (ver datasheet del STM32F411)
         HAL_GPIO_Init(GPIOA, &g);
     }
 }
@@ -2960,35 +3695,35 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef *hspi) {
 /* === CONSOLA DE DEPURACION — USART2 POR EL VCP DEL ST-LINK ================= */
 /* ========================================================================== */
 
-static void MX_USART2_UART_Init(void) {
+static void MX_USART2_UART_Init(void) {   // configura USART2 (115200 8N1) -- consola de depuracion por el VCP del ST-Link
     huart2.Instance          = USART2;
-    huart2.Init.BaudRate     = 115200;
-    huart2.Init.WordLength   = UART_WORDLENGTH_8B;
-    huart2.Init.StopBits     = UART_STOPBITS_1;
-    huart2.Init.Parity       = UART_PARITY_NONE;
-    huart2.Init.Mode         = UART_MODE_TX_RX;
-    huart2.Init.HwFlowCtl    = UART_HWCONTROL_NONE;
-    huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-    HAL_UART_Init(&huart2);
+    huart2.Init.BaudRate     = 115200;   // velocidad estandar de consola -- cambiar esto exige cambiar tambien la velocidad configurada en el programa terminal (screen, PuTTY, etc.)
+    huart2.Init.WordLength   = UART_WORDLENGTH_8B;   // 8 bits de datos por caracter
+    huart2.Init.StopBits     = UART_STOPBITS_1;   // 1 bit de parada (formato "8N1")
+    huart2.Init.Parity       = UART_PARITY_NONE;   // sin bit de paridad (la "N" de "8N1")
+    huart2.Init.Mode         = UART_MODE_TX_RX;   // habilita transmision Y recepcion (aunque este proyecto solo usa TX para printf)
+    huart2.Init.HwFlowCtl    = UART_HWCONTROL_NONE;   // sin control de flujo por hardware (RTS/CTS)
+    huart2.Init.OverSampling = UART_OVERSAMPLING_16;   // sobremuestreo estandar de 16x, mas preciso para detectar el bit de inicio
+    HAL_UART_Init(&huart2);   // aplica toda la configuracion
 }
 
-void HAL_UART_MspInit(UART_HandleTypeDef *huart) {
-    if (huart->Instance == USART2) {
-        __HAL_RCC_USART2_CLK_ENABLE();
+void HAL_UART_MspInit(UART_HandleTypeDef *huart) {   // inicializacion de bajo nivel del USART2 (clocks + pines PA2/PA3) -- llamada automaticamente por HAL_UART_Init()
+    if (huart->Instance == USART2) {   // verifica que sea justo USART2
+        __HAL_RCC_USART2_CLK_ENABLE();   // habilita el reloj del periferico USART2
         GPIO_InitTypeDef g = {0};
-        g.Pin       = GPIO_PIN_2 | GPIO_PIN_3;  /* PA2=TX, PA3=RX -- VCP ST-Link */
-        g.Mode      = GPIO_MODE_AF_PP;
+        g.Pin       = GPIO_PIN_2 | GPIO_PIN_3;  /* PA2=TX, PA3=RX -- VCP ST-Link */   // mismos pines que ya trae cableados el ST-Link integrado de la Nucleo, sin cableado adicional
+        g.Mode      = GPIO_MODE_AF_PP;   // funcion alternativa (el periferico USART controla el pin)
         g.Pull      = GPIO_NOPULL;
         g.Speed     = GPIO_SPEED_FREQ_HIGH;
-        g.Alternate = GPIO_AF7_USART2;
+        g.Alternate = GPIO_AF7_USART2;   // numero de funcion alternativa especifico de USART2 en estos pines
         HAL_GPIO_Init(GPIOA, &g);
     }
 }
 
-int __io_putchar(int ch) {
-    uint8_t c = (uint8_t)ch;
-    HAL_UART_Transmit(&huart2, &c, 1, HAL_MAX_DELAY);
-    return ch;
+int __io_putchar(int ch) {   // retarget de printf(): manda cada caracter por USART2 -- esto es lo que hace que printf() salga por el cable del ST-Link
+    uint8_t c = (uint8_t)ch;   // printf entrega un int, pero HAL_UART_Transmit necesita un puntero a byte
+    HAL_UART_Transmit(&huart2, &c, 1, HAL_MAX_DELAY);   // transmite ese unico byte, bloqueante (aceptable: es solo 1 byte a la vez, printf ya es lento por naturaleza)
+    return ch;   // printf espera que se le devuelva el mismo caracter recibido
 }
 
 /* ========================================================================== */
@@ -2996,45 +3731,45 @@ int __io_putchar(int ch) {
 /* ========================================================================== */
 
 /* tick de tim4: alterna pa6 */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
-    if (htim->Instance == TIM4) {
-        HAL_GPIO_TogglePin(BUZZER_PORT, BUZZER_PIN);
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {   // callback periodico de TIM4: alterna el pin del buzzer (PA6) para generar el tono
+    if (htim->Instance == TIM4) {   // verifica que sea justo TIM4 (este callback es compartido por TODOS los timers del proyecto)
+        HAL_GPIO_TogglePin(BUZZER_PORT, BUZZER_PIN);   // invierte el nivel del pin del buzzer -- 2 toggles seguidos = 1 ciclo completo de la onda cuadrada
     }
 }
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
-    if (hadc->Instance == ADC1) {
-        uint16_t valor = (uint16_t)HAL_ADC_GetValue(&hadc1);
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {   // callback de fin de conversion del ADC1: filtra (EMA) el canal recien leido y encadena el siguiente de los 4 (Y1,X1,Y2,X2)
+    if (hadc->Instance == ADC1) {   // verifica que sea justo ADC1
+        uint16_t valor = (uint16_t)HAL_ADC_GetValue(&hadc1);   // lee el resultado de la conversion que se acaba de completar
 
-        switch (adc_rank_actual) {
-        case 0:
-            filtro_adc_y += ((int32_t)valor - filtro_adc_y) / ADC_FILTRO_N;
+        switch (adc_rank_actual) {   // segun de que canal (rank) era esta conversion, filtra y guarda en la variable correspondiente
+        case 0:   // rank 1 recien completado: eje Y de J1
+            filtro_adc_y += ((int32_t)valor - filtro_adc_y) / ADC_FILTRO_N;   // filtro EMA: se acerca al valor nuevo en una fraccion 1/ADC_FILTRO_N
             joystick_y = ((int32_t)filtro_adc_y > (int32_t)centro_j1y - (int32_t)JOY_ZONA_MUERTA &&
                           (int32_t)filtro_adc_y < (int32_t)centro_j1y + (int32_t)JOY_ZONA_MUERTA)
-                       ? centro_j1y : (uint16_t)filtro_adc_y;
-            adc_rank_actual = 1;
+                       ? centro_j1y : (uint16_t)filtro_adc_y;   // si esta dentro de la zona muerta, se fuerza al centro exacto (evita temblor en reposo); si no, se usa el valor filtrado real
+            adc_rank_actual = 1;   // el proximo resultado que llegue sera del rank 2
             break;
-        case 1:
+        case 1:   // rank 2 recien completado: eje X de J1
             filtro_adc_x += ((int32_t)valor - filtro_adc_x) / ADC_FILTRO_N;
             joystick_x = ((int32_t)filtro_adc_x > (int32_t)centro_j1x - (int32_t)JOY_ZONA_MUERTA &&
                           (int32_t)filtro_adc_x < (int32_t)centro_j1x + (int32_t)JOY_ZONA_MUERTA)
                        ? centro_j1x : (uint16_t)filtro_adc_x;
-            adc_rank_actual = 2;
+            adc_rank_actual = 2;   // el proximo sera rank 3
             break;
-        case 2:
+        case 2:   // rank 3 recien completado: eje Y de J2
             filtro_adc_y2 += ((int32_t)valor - filtro_adc_y2) / ADC_FILTRO_N;
             joystick2_y = ((int32_t)filtro_adc_y2 > (int32_t)centro_j2y - (int32_t)JOY_ZONA_MUERTA &&
                            (int32_t)filtro_adc_y2 < (int32_t)centro_j2y + (int32_t)JOY_ZONA_MUERTA)
                         ? centro_j2y : (uint16_t)filtro_adc_y2;
-            adc_rank_actual = 3;
+            adc_rank_actual = 3;   // el proximo sera rank 4, el ultimo
             break;
-        default:
+        default:   // rank 4 recien completado: eje X de J2 -- ultimo de la secuencia, hay que reiniciar el ciclo
             filtro_adc_x2 += ((int32_t)valor - filtro_adc_x2) / ADC_FILTRO_N;
             joystick2_x = ((int32_t)filtro_adc_x2 > (int32_t)centro_j2x - (int32_t)JOY_ZONA_MUERTA &&
                            (int32_t)filtro_adc_x2 < (int32_t)centro_j2x + (int32_t)JOY_ZONA_MUERTA)
                         ? centro_j2x : (uint16_t)filtro_adc_x2;
-            adc_rank_actual = 0;
-            HAL_ADC_Start_IT(&hadc1);
+            adc_rank_actual = 0;   // vuelve al rank 1 para el proximo ciclo de 20ms
+            HAL_ADC_Start_IT(&hadc1);   // rearma el ADC para la proxima secuencia de 4 conversiones (el modo escaneo se detiene solo al completar los 4 ranks)
             break;
         }
     }
@@ -3044,7 +3779,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc) {
 /* === MANEJO DE ERRORES ===================================================== */
 /* ========================================================================== */
 
-void Error_Handler(void) {
-    __disable_irq();
-    while (1) {}
+void Error_Handler(void) {   // trampa de error generica del HAL (init de perifericos fallido, etc.) -- se queda con las interrupciones apagadas para depurar
+    __disable_irq();   // apaga todas las interrupciones -- congela el sistema en un estado conocido para inspeccionar con el debugger
+    while (1) {}   // bucle infinito: nunca vuelve, hay que resetear la placa o depurar con SWD para salir de aca
 }

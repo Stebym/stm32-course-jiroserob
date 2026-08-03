@@ -92,6 +92,12 @@ void ILI9341_DrawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t c
 void ILI9341_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color);
 void ILI9341_DrawCircle(int16_t xc, int16_t yc, int16_t r, uint16_t color);
 void ILI9341_FillCircle(int16_t xc, int16_t yc, int16_t r, uint16_t color);
+/* Circulo de 2 colores concentricos (anillo/cuerpo + nucleo) en un solo
+ * pase de SPI -- usar en vez de 2 llamadas a ILI9341_FillCircle siempre que
+ * el circulo interior comparta centro con el exterior (domos, notas, zonas
+ * de golpe). r_in<=0 equivale a un ILI9341_FillCircle normal. */
+void ILI9341_FillCircle2(int16_t xc, int16_t yc, int16_t r_out, uint16_t color_out,
+                          int16_t r_in, uint16_t color_in);
 
 /* ========================================================================== */
 /* === API — IMAGENES ======================================================= */
