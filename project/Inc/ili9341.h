@@ -69,6 +69,14 @@ void ILI9341_SetFlip180(uint8_t flip);
 /* ========================================================================== */
 
 void ILI9341_Init(void);
+
+/* Devuelve 1 (una sola vez, se rearma solo) cuando se detectaron varias
+ * fallas de transmision SPI seguidas -- señal de ruido electrico en el bus
+ * que puede haber dejado al controlador desincronizado (ver el comentario
+ * de LCD_SPI_Send en ili9341.c). El llamador (main.c) debe reaccionar
+ * reinicializando la pantalla por completo. */
+uint8_t ILI9341_FalloComunicacionDetectado(void);
+
 void ILI9341_SetWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1);
 void ILI9341_EndWrite(void);
 void ILI9341_WritePixels(const uint8_t *buf, uint32_t len_bytes);

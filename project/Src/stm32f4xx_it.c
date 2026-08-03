@@ -63,11 +63,10 @@ void SysTick_Handler(void)
  * TIM3_ADCTrigger_Init en main.c); esta interrupcion solo atiende el "fin de
  * conversion" del propio ADC1 para que HAL_ADC_ConvCpltCallback (main.c)
  * pueda leer el canal recien convertido y encadenar el siguiente. No hay un
- * handler EXTI en este archivo: los clicks de los joystick se leian antes
- * por EXTI0 (SW del joystick 1), pero ese pin y el SW del joystick 2 se
- * retiraron fisicamente el 2026-07-30 (ver board_pins.h) y el handler
- * correspondiente (EXTI0_IRQHandler) se elimino junto con el resto del
- * codigo asociado. */
+ * handler EXTI en este archivo: los pines de click (SW) de ambos joystick
+ * fueron retirados fisicamente del montaje (ver board_pins.h), por lo que
+ * el handler EXTI0_IRQHandler que antes los atendia se elimino junto con el
+ * resto del codigo asociado. */
 void ADC_IRQHandler(void)
 {
     HAL_ADC_IRQHandler(&hadc1);

@@ -39,56 +39,54 @@
 #define LCD_RST_HIGH()  HAL_GPIO_WritePin(LCD_RST_PORT, LCD_RST_PIN, GPIO_PIN_SET)
 
 /* Boton de usuario B1 de la Nucleo (integrado en la placa, PC13, pull-up   */
-/* externo R30=4k7 ya presente en el hardware de la Nucleo) -- en un inicio */
-/* solo servia para avanzar manualmente el recorrido de pantallas de prueba.*/
-/* Desde que se retiraron los pines SW de ambos joystick (2026-07-30, ver   */
-/* seccion JOYSTICK mas abajo) es el UNICO boton de "click" que le queda a  */
-/* todo el sistema, y paso a ser tambien el que confirma menus y lanza el   */
-/* conteo 3-2-1-GO (ver el bloque "if (avanzar)" en main.c).                */
+/* externo R30=4k7 ya presente en el hardware de la Nucleo). Con los pines  */
+/* SW de ambos joystick retirados (ver seccion JOYSTICK mas abajo), es el   */
+/* UNICO boton de tipo "click" de todo el sistema: confirma menus y lanza   */
+/* el conteo 3-2-1-GO (ver el bloque "if (avanzar)" en main.c).             */
 #define BTN_USER_PORT   GPIOC
 #define BTN_USER_PIN    GPIO_PIN_13
 
 /* ========================================================================== */
-/* === JOYSTICK — misma configuracion probada en examen_parcial ============= */
+/* === JOYSTICK 1 ============================================================ */
 /* ========================================================================== */
 /* PA1=ADC1_IN1 (VRy), PA4=ADC1_IN4 (VRx) — separados a proposito para evitar */
 /* continuidad electrica entre ejes.                                         */
-/* SW (click) RETIRADO fisicamente (2026-07-30) para ahorrar espacio/cables  */
-/* -- solo quedan los 2 ejes analogicos + VCC(3V3) + GND, 4 hilos en vez de  */
-/* 5. El reintento tras un game over ahora se dispara moviendo el stick (ver */
-/* SJ_GAMEOVER en SimonJoy_Actualizar, main.c) en vez de con un click.       */
+/* El pin de click (SW) fue retirado fisicamente del montaje para ahorrar    */
+/* espacio y cableado -- solo quedan los 2 ejes analogicos + VCC(3V3) + GND, */
+/* 4 hilos en vez de 5. El reintento tras un game over se dispara moviendo   */
+/* el stick (ver SJ_GAMEOVER en SimonJoy_Actualizar, main.c) en vez de con   */
+/* un click.                                                                 */
 
 /* ========================================================================== */
-/* === JOYSTICK 2 — segundo jugador (cableado 2026-07-29) ==================== */
+/* === JOYSTICK 2 — segundo jugador ========================================== */
 /* ========================================================================== */
-/* PC0=ADC1_IN10 (VRy2), PC1=ADC1_IN11 (VRx2) -- elegidos porque la board */
-/* auxiliar del usuario no trae PA2/PA3 (los candidatos originales del CN10) */
-/* SW2 RETIRADO fisicamente (2026-07-30), igual que el del joystick 1 --    */
-/* mismo motivo (ahorrar espacio) y mismo reemplazo (reintento por          */
-/* movimiento, ver SJ_GAMEOVER en SimonJoy2_ActualizarJugador, main.c).     */
+/* PC0=ADC1_IN10 (VRy2), PC1=ADC1_IN11 (VRx2) -- elegidos porque la placa    */
+/* auxiliar utilizada no expone PA2/PA3 (los candidatos originales del CN10).*/
+/* El pin de click (SW2) fue retirado fisicamente del montaje, igual que el  */
+/* del joystick 1 -- mismo motivo (ahorrar espacio) y mismo reemplazo        */
+/* (reintento por movimiento, ver SJ_GAMEOVER en                            */
+/* SimonJoy2_ActualizarJugador, main.c).                                     */
 
 /* ========================================================================== */
-/* === BOTONES ARCADE — 2 JUGADORES x 4 COLORES (cableado 2026-07-29) ======== */
+/* === BOTONES ARCADE — 2 JUGADORES x 4 COLORES ============================== */
 /* ========================================================================== */
 /* Cada boton: switch (entrada, pull-up interno, sin resistencia externa) +
  * LED (salida digital hacia un canal de ULN2003A que hace de driver de
- * corriente -- GPIO=HIGH prende el LED). Jugador 1 usa el primer ULN2003A
- * (set original); Jugador 2 usa un 2do ULN2003A completo. Orden de color
+ * corriente -- GPIO=HIGH prende el LED). El jugador 1 usa un primer
+ * ULN2003A; el jugador 2 usa un segundo ULN2003A completo. Orden de color
  * 0=ROJO 1=VERDE 2=AZUL 3=AMARILLO (igual que NOTE_COLOR/LANE_COLOR y que
  * la cuadricula 2x2 de Renderer_DrawModoSimonClasico). Ver
  * CABLEADO_BOTONES.txt para el detalle fisico completo.
  *
- * REORGANIZADO (2026-07-30): en el header fisico de la board auxiliar, PA8
- * queda al medio de un solo lado. El usuario cableo el jugador 1 en el
- * tramo "PA8 hacia PB12" y el jugador 2 en el tramo "PA8 hacia PB2" -- por
- * eso los 8 pines de cada jugador se reasignaron para quedar TODOS del
- * mismo lado de PA8 (nada de cruzar de un tramo al otro), evitando cables
- * desordenados en la board. Sobra PB9 (jugador1) y PB2 (jugador2) libres
- * para uso futuro (ej. boton de confirmar por jugador).
+ * La asignacion de pines de cada jugador se agrupo deliberadamente del
+ * mismo lado del pin PA8 en el header fisico de la placa auxiliar (evitando
+ * cruzar de un tramo del header al otro), para simplificar el cableado.
+ * Quedan libres PB9 (lado del jugador 1) y PB2 (lado del jugador 2) para
+ * uso futuro, por ejemplo un boton de confirmar por jugador.
  *
- * AJUSTE (2026-07-30): el orden de los 4 LED (pines IN1..IN4 del ULN2003A)
- * se re-emparejo con el color para que los cables de control queden rectos
- * en la board fisica -- ver CABLEADO_BOTONES.txt para el detalle. */
+ * El orden de los 4 canales de LED (pines IN1..IN4 del ULN2003A) se
+ * emparejo con el color de forma que los cables de control queden rectos
+ * en la placa fisica -- ver CABLEADO_BOTONES.txt para el detalle. */
 
 #define BTN1_ROJO_SW_PORT       GPIOB
 #define BTN1_ROJO_SW_PIN        GPIO_PIN_12
@@ -103,12 +101,13 @@
 #define BTN1_ROJO_LED_PIN       GPIO_PIN_8
 #define BTN1_VERDE_LED_PORT     GPIOC
 #define BTN1_VERDE_LED_PIN      GPIO_PIN_8
-/* AZUL/AMARILLO cruzados en el ULN2003A #1 (2026-07-31, confirmado por el
- * usuario: pines 13/14 del ULN cambiados, dificil de resoldar) -- se
- * compensa aca intercambiando a que pin del micro apunta cada nombre, en
- * vez de tocar el cableado fisico. Los botones (SW) NO estan cruzados,
- * solo el driver de LED -- por eso este intercambio va SOLO en los _LED_,
- * no en los _SW_ de arriba. */
+/* Los canales AZUL/AMARILLO quedaron cruzados en el ULN2003A #1 (pines 13
+ * y 14 del integrado invertidos respecto al cableado logico, dificiles de
+ * resoldar) -- se compensa en software intercambiando a que pin del
+ * microcontrolador apunta cada nombre de color, en vez de modificar el
+ * cableado fisico. Los switches (SW) no estan cruzados, unicamente el
+ * driver de LED -- por eso el intercambio se aplica solo a las macros
+ * _LED_, no a las _SW_ de arriba. */
 #define BTN1_AZUL_LED_PORT      GPIOA
 #define BTN1_AZUL_LED_PIN       GPIO_PIN_11
 #define BTN1_AMARILLO_LED_PORT  GPIOC
@@ -129,14 +128,11 @@
 #define BTN2_VERDE_LED_PIN      GPIO_PIN_14
 #define BTN2_AZUL_LED_PORT      GPIOC
 #define BTN2_AZUL_LED_PIN       GPIO_PIN_4
-/* Sigue en diagnostico (2026-07-31): canal original IN4/OUT4(pin13) del
- * ULN2003A #2 confirmado malo (LED bueno con multimetro, anodo+resistencia
- * confirmados bien). Se probo IN5/OUT5(pin12) con el control en PB2, sin
- * exito -- ahora se prueba esa MISMA reubicacion de canal pero con el
- * control de vuelta en PB5 (combinacion todavia no probada). Si tampoco
- * prende, el canal IN5/OUT5 o su cableado nuevo puede estar mal, no el pin
- * del micro -- revisar continuidad ahi antes de seguir cambiando pines del
- * STM32. */
+/* El canal IN4/OUT4 (pin 13) del ULN2003A #2, originalmente asignado al LED
+ * amarillo del jugador 2, resulto estar averiado (verificado con
+ * multimetro: LED, anodo y resistencia en buen estado). Se reubico el
+ * control de ese LED al canal IN5/OUT5 (pin 12) del mismo integrado,
+ * comandado desde PB5. */
 #define BTN2_AMARILLO_LED_PORT  GPIOB
 #define BTN2_AMARILLO_LED_PIN   GPIO_PIN_5
 

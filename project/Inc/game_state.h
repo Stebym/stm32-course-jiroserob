@@ -2,9 +2,9 @@
  ******************************************************************************
  * @file    game_state.h
  * @author  Jimmy Stebym Rosero Barrera
- * @brief   Tipos de datos y estado global para Beat Clash — copia de trabajo
- *          en practica_pantalla/ para iterar el diseño visual del display.
- *          Aqui puedo cambiar la dificultad, numero de notas y velocidades.
+ * @brief   Constantes de juego (dimensiones de pantalla, velocidades,
+ *          ventanas de puntuacion) y tipos de datos del estado de partida
+ *          para Beat Clash.
  ******************************************************************************
  */
 
@@ -62,11 +62,26 @@
 /* Ventanas de puntuacion (distancia del centro de la nota al centro de press zone) */
 #define HIT_PERFECT     5       /* dentro de 5px del centro → 100 puntos     */
 #define HIT_GOOD        13      /* dentro de 13px → 50 puntos                */
-#define HIT_OK          PRESS_ZONE_W  /* cualquier overlap → 25 puntos       */
+/* HIT_OK ya no esta atado a PRESS_ZONE_W (esa constante tambien dimensiona la
+ * zona visual de la maqueta vieja en paisaje, DEMO_JUGANDO -- cambiarla ahi
+ * hubiera movido esa pantalla sin querer). Ensanchado a proposito respecto
+ * al valor anterior (era 25 = PRESS_ZONE_W) para dar mas margen de tiempo
+ * real en Guitar Hero cara-a-cara: a NOTE_SPEED_L2 la ventana pasa de ~410ms
+ * a ~660ms por nota, sin tocar PERFECT/GOOD (para que apuntar bien siga
+ * valiendo la pena). */
+#define HIT_OK          40      /* dentro de 40px → 25 puntos */
 
 #define SCORE_PERFECT   100
 #define SCORE_GOOD      50
 #define SCORE_OK        25
+
+/* Notas "sostenidas" de Guitar Hero: en vez de golpearse en un instante, hay
+ * que mantener presionado el color correcto mientras la nota permanece fija
+ * en la zona de golpe. El puntaje se acredita en proporcion al tiempo
+ * sostenido (no todo o nada), asi que soltar antes de tiempo igual paga lo
+ * que se alcanzo a sostener. */
+#define GH_SOSTENIDA_DURACION_MS  2000U   /* ms que hay que sostenerla completa para el bonus maximo */
+#define SCORE_SOSTENIDA_POR_SEG   10U     /* puntos acreditados por cada segundo sostenido */
 
 /* ========================================================================== */
 /* === TIMING DEL LOOP ====================================================== */
@@ -79,6 +94,16 @@
 /* ========================================================================== */
 /* === TIPOS DE DATOS ======================================================= */
 /* ========================================================================== */
+/* Algunos campos de EstadoJugador_t y GameState_t (btns/btns_prev/press/
+ * release, joy_x/joy_y, adc_raw, input_flag, start_btn) documentan un
+ * mecanismo de entrada por DMA/ISR periodica de TIM5 que corresponde a una
+ * version anterior del diseño. El mecanismo real implementado en main.c es
+ * distinto: los botones y el boton B1 se leen por sondeo (polling) dentro
+ * del bucle principal, y el joystick se lee por interrupcion del ADC
+ * disparada por TIM3 cada 20 ms (ver HAL_ADC_ConvCpltCallback en main.c).
+ * Estos campos legados no se eliminaron para no romper la definicion de la
+ * estructura, pero no deben tomarse como documentacion del comportamiento
+ * actual del programa. */
 
 typedef struct {
     int16_t  x_rel;        /* posicion relativa al area del jugador (px izq) */
@@ -88,6 +113,10 @@ typedef struct {
     uint8_t  golpeada;     /* 1=ya fue presionada exitosamente               */
     uint8_t  erased;       /* 1=ya se borro de la pantalla                   */
     int16_t  x_prev;       /* posicion anterior para el render delta         */
+    uint8_t  sostenida;    /* 1=nota larga: hay que MANTENER presionado el
+                               color mientras esta fija en la zona de golpe,
+                               en vez de un solo toque (ver
+                               GH_SOSTENIDA_DURACION_MS en main.c)           */
 } Nota_t;
 
 typedef struct {
@@ -161,12 +190,9 @@ typedef struct {
 /* ========================================================================== */
 /* === COLORES RGB565 ======================================================= */
 /* ========================================================================== */
-/* NOTA (2026-07-13): en el panel real, RGB565 estandar se ve correcto        */
-/* (rojo=rojo, azul=azul) — confirmado con Prueba 1 en practica_pantalla/.    */
-/* Estos valores YA NO llevan el intercambio R/B que tenia el archivo         */
-/* original de project/Inc/game_state.h (ese intercambio compensaba un       */
-/* supuesto BGR fisico que resulto no aplicar aqui). Si se porta este        */
-/* archivo de vuelta al proyecto principal, corregir alla tambien.           */
+/* En este panel, el formato RGB565 estandar se muestra correctamente (rojo  */
+/* se ve rojo, azul se ve azul), sin necesidad de intercambiar los canales   */
+/* R y B como compensacion de un supuesto orden BGR fisico.                  */
 
 #define COLOR_BLACK     0x0000
 #define COLOR_WHITE     0xFFFF

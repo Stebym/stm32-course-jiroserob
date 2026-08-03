@@ -2,8 +2,9 @@
  ******************************************************************************
  * @file    renderer.h
  * @author  Jimmy Stebym Rosero Barrera
- * @brief   Capa de renderizado para Beat Clash — pantalla ILI9341 paisaje.
- *          Aqui puedo cambiar colores, tamaños y el estilo de los elementos.
+ * @brief   Capa de renderizado para Beat Clash sobre pantalla ILI9341.
+ *          Prototipos de las funciones de dibujo (pantallas, HUD, notas);
+ *          la implementacion define colores, tamaños y estilo visual.
  ******************************************************************************
  */
 
@@ -63,6 +64,15 @@ void Renderer_DrawSeleccionModo(uint8_t cursor);
 /* Mueve el cursor de seleccion de modo sin FillScreen — solo repinta las
  * tarjetas que cambian de estado y el texto de descripcion. */
 void Renderer_UpdateSeleccionModo(uint8_t cursor_ant, uint8_t cursor);
+
+/* Invierte la posicion en pantalla de ROJO<->AMARILLO y VERDE<->AZUL en la
+ * cuadricula 2x2 de Simon Clasico, para que coincida con la disposicion
+ * fisica real de los botones arcade (pedido explicito del usuario, solo
+ * para la partida de 2 jugadores -- el modo de 1 jugador no debe tocarse,
+ * ver Botones_IniciarSolo en main.c). Llamar ANTES de dibujar la pantalla
+ * (Renderer_DrawModoSimonClasico / *Jugador); el valor queda vigente hasta
+ * la proxima llamada. */
+void Renderer_SetSimonClasicoInvertido(uint8_t invertido);
 
 /* Vista previa de modo Simon Clasico — paso_activo 0-3 encendido, 0xFF ninguno */
 void Renderer_DrawModoSimonClasico(uint8_t paso_j1, uint8_t paso_j2);
@@ -159,5 +169,22 @@ void Renderer_GH_DrawNota(uint8_t jugador, const Nota_t *nota);
 void Renderer_GH_EraseNotaTrail(uint8_t jugador, const Nota_t *nota, uint8_t speed);
 void Renderer_GH_ActualizarPuntaje(uint8_t jugador, uint16_t puntaje, uint16_t combo);
 void Renderer_GH_DibujarFin(uint8_t jugador, uint16_t puntaje);
+
+/* Efecto de impacto: pinta la zona de golpe de `carril` en blanco brillante
+ * durante 1 frame cuando el jugador acierta -- llamar
+ * Renderer_GH_ActualizarFlashes(jugador) una vez por jugador en cada tick
+ * del loop principal para que revierta automaticamente al frame siguiente. */
+void Renderer_GH_FlashZona(uint8_t jugador, uint8_t carril);
+void Renderer_GH_ActualizarFlashes(uint8_t jugador);
+
+/* Nota sostenida (ver GH_SOSTENIDA_DURACION_MS en game_state.h): la nota
+ * queda fija en la zona de golpe mientras se mantiene presionado su color,
+ * y este dibujo dilata su nucleo blanco (0-100% de GH_NOTE_R) segun cuanto
+ * lleva sostenida, dando una sensacion de "ir llenandola". Llamar en cada
+ * tick mientras dure el sostenido. Al terminar (completa o cortada), llamar
+ * a Renderer_GH_TerminarSostenida para restaurar el estilo normal de la
+ * zona de golpe de ese carril (la nota ya no se dibuja mas). */
+void Renderer_GH_DrawNotaSostenida(uint8_t jugador, const Nota_t *nota, uint8_t progreso_pct);
+void Renderer_GH_TerminarSostenida(uint8_t jugador, uint8_t carril);
 
 #endif /* __RENDERER_H */
