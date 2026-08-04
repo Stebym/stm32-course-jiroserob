@@ -1,10 +1,57 @@
 /**
  ******************************************************************************
- * @file    stm32f4xx_it.c
- * @author  Jimmy Stebym Rosero Barrera
- * @brief   Rutinas de servicio de interrupcion (ISR) para la Nucleo F411RE.
- *          SPI1 se usa por polling, asi que solo se requieren las
- *          excepciones del nucleo y el SysTick.
+ * @file    : stm32f4xx_it.c
+ * @author  : Jimmy Stebym Rosero Barrera
+ * @brief   : Rutinas de servicio de interrupcion (ISR) de la aplicacion,
+ *            Nucleo-F411RE (STM32F411RETx).
+ *
+ * ------------------------------------------------------------------------
+ * QUE HAY (Y QUE NO HAY) EN ESTE ARCHIVO
+ * ------------------------------------------------------------------------
+ * Este proyecto solo tiene 3 interrupciones activas en todo el sistema, y
+ * las 3 comparten el mismo principio de diseño: una ISR NUNCA ejecuta logica
+ * de juego, solo alimenta una variable o delega en el HAL, que a su vez
+ * llama a un callback definido en main.c. Toda decision (que dibujar, que
+ * botón se presiono, si el jugador acerto o fallo) se toma en el bucle
+ * principal de main.c, que corre con las interrupciones habilitadas -- asi
+ * es mucho mas facil de razonar y depurar que meter logica de juego dentro
+ * de un handler.
+ *
+ *   SysTick_Handler  - cada 1 ms (configurado por HAL_Init()). Unico trabajo:
+ *                       HAL_IncTick(), que alimenta HAL_GetTick()/HAL_Delay().
+ *                       Sin esta interrupcion, TODA la temporizacion no
+ *                       bloqueante del proyecto (antirrebote, combos,
+ *                       cooldowns, patrones de sonido -- ver main.c) se
+ *                       detiene, porque todos comparan contra HAL_GetTick().
+ *   ADC_IRQHandler   - fin de conversion de UN canal del ADC1 (los 4 canales
+ *                       de los 2 joystick, disparados cada 20 ms por el TRGO
+ *                       de TIM3 -- ver TIM3_ADCTrigger_Init/ADC1_Joystick_Init
+ *                       en main.c). Delega en HAL_ADC_IRQHandler(), que llama
+ *                       a HAL_ADC_ConvCpltCallback() (definido en main.c): ahi
+ *                       se lee el valor, se filtra (EMA) y se encadena el
+ *                       siguiente canal.
+ *   TIM4_IRQHandler  - interrupcion periodica de TIM4, cuyo unico trabajo es
+ *                       alternar el pin PA6 (buzzer) para sintetizar un tono
+ *                       por software (ver seccion BUZZER de la cabecera de
+ *                       main.c: el F411 no tiene un canal PWM libre en PA6).
+ *                       Delega en HAL_TIM_IRQHandler(), que llama a
+ *                       HAL_TIM_PeriodElapsedCallback() (definido en main.c),
+ *                       donde ocurre el toggle real del pin.
+ *
+ * NO hay interrupcion de SPI1 (la pantalla ILI9341 se maneja por POLLING,
+ * ver Src/ili9341.c -- HAL_SPI_Transmit bloqueante), ni de USART2 (la
+ * consola de depuracion solo transmite, tambien por polling, ver
+ * __io_putchar en main.c), ni EXTI de botones (los 8 botones arcade y B1 se
+ * leen por polling en cada vuelta del bucle principal, con antirrebote por
+ * software -- ver Botones_LeerColor en main.c). Tampoco hay EXTI de
+ * joystick: los pines de click (SW) de ambos joystick fueron retirados
+ * fisicamente del montaje, asi que el handler EXTI0_IRQHandler que antes
+ * los atendia se elimino junto con el resto del codigo asociado.
+ *
+ * Prioridades NVIC (configuradas en main.c, HAL_NVIC_SetPriority): ADC_IRQn
+ * y TIM4_IRQn quedan ambas en prioridad 3 (relativamente baja, ninguna de
+ * las dos es critica en microsegundos); SysTick corre con la prioridad por
+ * defecto que le asigna el HAL (reservada para el tick del sistema).
  ******************************************************************************
  */
 

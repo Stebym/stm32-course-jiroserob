@@ -1,9 +1,110 @@
 /**
  ******************************************************************************
- * @file    ili9341.c
- * @author  Jimmy Stebym Rosero Barrera
- * @brief   Driver ILI9341 — inicializacion y primitivas de dibujo basico
- *          para practicas de pantalla (relleno, figuras, imagenes, texto).
+ * @file    : ili9341.c
+ * @author  : Jimmy Stebym Rosero Barrera
+ * @brief   : Driver de bajo nivel del controlador ILI9341 (pantalla TFT
+ *            240x320 / 320x240 por SPI). Capa mas baja de la aplicacion:
+ *            no sabe nada del juego, solo habla el protocolo del chip y
+ *            expone primitivas de dibujo (rectangulos, circulos, lineas,
+ *            texto, imagenes). renderer.c es quien lo usa para dibujar
+ *            pantallas concretas del juego.
+ *
+ * ------------------------------------------------------------------------
+ * BUS: SPI1 DE SOLO ESCRITURA, POR POLLING
+ * ------------------------------------------------------------------------
+ * El ILI9341 de este montaje NO tiene el pin MISO cableado (ver
+ * board_pins.h): el driver nunca necesita LEER de vuelta del controlador
+ * (por ejemplo su ID), solo escribir comandos y pixeles, asi que se
+ * configura como solo-escritura. Todas las transmisiones usan
+ * HAL_SPI_Transmit() (bloqueante/polling, ver LCD_SPI_Send() mas abajo) en
+ * vez de interrupcion o DMA -- para las cantidades de datos de este
+ * proyecto (pantalla de 320x240 max.), el costo de implementar un pipeline
+ * asincrono no se justifica frente a la simplicidad de esperar a que
+ * termine cada transmision antes de seguir.
+ * El protocolo de comandos de un controlador TFT como el ILI9341 distingue
+ * "comando" de "dato" con un pin dedicado (DC = Data/Command, ver
+ * board_pins.h): DC en bajo antes de mandar el BYTE de comando (ej. 0x2A =
+ * Column Address Set), DC en alto antes de mandar los bytes de PARAMETROS o
+ * de PIXELES que le siguen. Esa es la unica señal (ademas de CS y SCK/MOSI)
+ * que el driver necesita manipular por software en cada transaccion.
+ *
+ * ------------------------------------------------------------------------
+ * RECUPERACION DE ERRORES DE SPI (LCD_SPI_Send / lcd_spi_fallas_seguidas)
+ * ------------------------------------------------------------------------
+ * En un montaje de protoboard, un pico de ruido electrico (por ejemplo al
+ * conmutar los LEDs de los botones arcade a traves de los ULN2003A) puede
+ * hacer que una transmision SPI puntual falle o agote su timeout. Sin
+ * recuperacion, el HAL deja el periferico en estado ocupado/error y
+ * CUALQUIER escritura posterior a la pantalla se descarta en silencio -- el
+ * sintoma visible seria "la pantalla se congela para siempre" aunque el
+ * resto del sistema (botones, log por UART) siga funcionando con
+ * normalidad. Por eso LCD_SPI_Send() envuelve cada HAL_SPI_Transmit() con
+ * HAL_SPI_Abort() en caso de falla (fuerza al periferico de vuelta a listo)
+ * y cuenta fallas CONSECUTIVAS; si se acumulan varias seguidas
+ * (LCD_SPI_FALLAS_UMBRAL), ILI9341_FalloComunicacionDetectado() se lo
+ * reporta al bucle principal para que reinicialice la pantalla por
+ * completo, en vez de reaccionar a un unico glitch aislado que ya se
+ * recupera solo.
+ *
+ * ------------------------------------------------------------------------
+ * VENTANAS DE ESCRITURA: SetWindow / WritePixels / EndWrite
+ * ------------------------------------------------------------------------
+ * El ILI9341 tiene un modo de direccionamiento automatico: una vez que se
+ * define una ventana rectangular (ILI9341_SetWindow, comandos CASET/PASET/
+ * RAMWR) y se empieza a escribir pixeles (ILI9341_WritePixels), el propio
+ * controlador AVANZA la direccion de memoria de video (GRAM) de forma
+ * automatica, fila por fila, sin que el software tenga que indicar la
+ * posicion de cada pixel individualmente. Esto es lo que permite que
+ * ILI9341_FillRect() arme UNA sola fila de color en RAM y la retransmita
+ * (memoria de video con auto-incremento) en vez de tener que armar y
+ * enviar el rectangulo completo pixel por pixel.
+ *
+ * ------------------------------------------------------------------------
+ * POR QUE IMPORTA CUANTAS "VENTANAS" SE ABREN, NO SOLO CUANTOS BYTES
+ * ------------------------------------------------------------------------
+ * Cada ciclo SetWindow+envio+EndWrite tiene un costo FIJO (varios comandos
+ * cortos de SPI + toggles de CS/DC), independiente de cuantos bytes de
+ * datos transporte despues. Primitivas como ILI9341_FillCircle()/
+ * FillCircle2() (circulo relleno, de 1 o 2 colores concentricos) abren una
+ * ventana POR FILA del circulo -- para circulos chicos (radios de 12-13px
+ * en el layout de 2 jugadores de Guitar Hero, ver renderer.c) el costo es
+ * aceptable, pero con radios grandes (22-24px en el layout de 1 jugador) la
+ * cantidad de filas casi se duplica, y con varias figuras dibujandose por
+ * frame esa sobrecarga por-fila puede hacer que un frame supere el
+ * presupuesto de ~33 ms del bucle principal (RENDER_TICK_MS en main.c),
+ * sintiendose como una pausa perceptible justo al redibujar. Es la razon
+ * por la que renderer.c tiene, ademas, una variante propia
+ * (gh1p_fill_circle_fast) que arma el circulo completo en RAM y lo manda
+ * en UNA sola ventana -- ese ajuste vive en renderer.c porque depende del
+ * contexto de juego (que fondo hay alrededor del circulo), no aqui.
+ *
+ * ------------------------------------------------------------------------
+ * INVENTARIO DE PRIMITIVAS DE ESTE ARCHIVO
+ * ------------------------------------------------------------------------
+ *   ILI9341_Init()                  Secuencia de arranque completa del
+ *                                    controlador (reset + comandos de
+ *                                    configuracion + sleep-out + display-on).
+ *   ILI9341_SetWindow/EndWrite      Abre/cierra una ventana de escritura.
+ *   ILI9341_SetPortrait/SetFlip180  Cambia orientacion (retrato/paisaje) y
+ *                                    /o gira 180° (para el jugador "de
+ *                                    espaldas" en el layout cara a cara).
+ *   ILI9341_WritePixels             Vuelca un buffer crudo RGB565 dentro de
+ *                                    una ventana ya abierta.
+ *   ILI9341_FillRect/FillScreen     Rectangulo/pantalla completa de 1 color.
+ *   ILI9341_DrawPixel               Un solo pixel (reusa FillRect 1x1).
+ *   ILI9341_DrawRect                Rectangulo SIN relleno (4 FillRect).
+ *   ILI9341_DrawLine                Segmento entre 2 puntos (atajo para
+ *                                    horizontal/vertical, Bresenham para el
+ *                                    resto).
+ *   ILI9341_DrawCircle/FillCircle/  Contorno / relleno de 1 color / relleno
+ *   FillCircle2                     de 2 colores concentricos (anillo +
+ *                                    nucleo) de un circulo.
+ *   ILI9341_DrawImage               Vuelca un bitmap RGB565 ya convertido
+ *                                    (ej. splash_bg.h) tal cual, sin
+ *                                    decodificar ningun formato comprimido.
+ *   ILI9341_DrawChar/DrawString     Texto con la fuente bitmap 5x7 (ver
+ *                                    fuente en este mismo archivo), con
+ *                                    factor de escala entero.
  ******************************************************************************
  */
 

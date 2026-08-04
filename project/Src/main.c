@@ -1,48 +1,227 @@
 /**
  ******************************************************************************
- * @file    main.c
- * @author  Jimmy Stebym Rosero Barrera
- * @brief   Logica de aplicacion de Beat Clash, consola de juego arcade tipo
- *          "Simon Dice / Guitar Hero" para 2 jugadores, sobre pantalla
- *          ILI9341 de 320x240 pixeles.
+ * @file    : main.c
+ * @author  : Jimmy Stebym Rosero Barrera
+ * @brief   : Final Box - Consola arcade de 2 jugadores cara a cara, tipo
+ *            "Simon Dice / Guitar Hero", sobre NUCLEO-F411RE + pantalla
+ *            ILI9341 (320x240, SPI). Proyecto principal de Taller V (2.0).
+ * Nucleo-F411RE (STM32F411RETx) | HAL puro de STM32Cube, sin CubeMX/.ioc,
+ * sin RTOS -- toda la aplicacion vive en un bucle mas una maquina de estados.
  *
- * Este archivo contiene la logica completa de aplicacion sobre la capa de
- * HAL de STM32Cube: inicializacion de perifericos, la maquina de estados de
- * pantallas del recorrido, y la implementacion de dos de los tres modos de
- * juego (Simon + Joystick y Simon con botones arcade, ambos jugables a 1 o
- * 2 jugadores en configuracion cara a cara). El renderizado (dibujo sobre
- * la pantalla) esta separado en renderer.c; este archivo se concentra en el
- * estado del juego y la lectura de entradas (botones, joystick).
+ * ------------------------------------------------------------------------
+ * QUE HACE ESTE PROGRAMA
+ * ------------------------------------------------------------------------
+ * Dos jugadores, uno a cada lado de la pantalla, compiten en 3 modos de
+ * juego distintos que comparten la misma mecanica de fondo ("repetir/atinar
+ * una secuencia o una nota a tiempo"):
+ *   1. SIMON CON BOTONES ARCADE: 4 botones con LED por jugador (rojo, verde,
+ *      azul, amarillo); el sistema enciende una secuencia de colores cada
+ *      vez mas larga y el jugador debe repetirla presionando los botones en
+ *      el mismo orden.
+ *   2. SIMON + JOYSTICK: la misma mecanica que el anterior, pero la entrada
+ *      es la direccion del joystick analogico (arriba/abajo/izquierda/
+ *      derecha) en vez del color de un boton. Jugable a 1 o 2 jugadores.
+ *   3. GUITAR HERO: notas de 4 colores caen por su carril hacia una "zona de
+ *      golpe" fija; el jugador debe presionar el boton de ese color justo
+ *      cuando la nota cruza la zona, sumando puntaje segun que tan cerca
+ *      cayo del centro (PERFECT/GOOD/OK). Jugable a 1 jugador (pantalla
+ *      completa) o 2 jugadores (mitad de pantalla cada uno, en espejo).
  *
- * Navegacion del recorrido de pantallas: el boton B1 (PC13) o el eje
- * vertical de cualquiera de los 2 joystick (PA1=VRy1 / PC0=VRy2) avanzan
- * entre pantallas. La lectura de joystick usa un disparo periodico del ADC
- * por TIM3 (TRGO cada 20 ms) combinado con un filtro EMA (media movil
- * exponencial) y una zona muerta central para evitar falsos positivos por
- * ruido. Las animaciones (parpadeo del splash, notas cayendo) permanecen
- * activas mientras el sistema espera una entrada del usuario.
+ * Todo el flujo (splash -> elegir jugadores -> elegir modo -> conteo 3-2-1-GO
+ * -> partida real -> resultado) es una maquina de estados de pantallas
+ * (DemoScreen_t, ver mas abajo) recorrida por el bucle principal a un ritmo
+ * fijo de ~30 fps (RENDER_TICK_MS=33 ms). El dibujo esta separado en
+ * renderer.c (capa de presentacion); este archivo (main.c) concentra TODA
+ * la logica de aplicacion: inicializacion de perifericos, la maquina de
+ * estados de pantallas, los 3 modos de juego, el generador de tonos del
+ * buzzer, y la lectura antirrebote de botones/joystick.
  *
- * B1 es el unico boton de tipo "click" del sistema, ya que los pines SW de
- * ambos joystick fueron retirados fisicamente para simplificar el cableado
- * (ver board_pins.h). Por esta razon, B1 confirma los menus (cantidad de
- * jugadores, modo de juego) y da inicio al conteo regresivo 3-2-1-GO (ver
- * el bloque "if (avanzar)" dentro de main()). El reintento tras perder una
- * partida no depende de ningun boton dedicado: en Simon + Joystick se
- * dispara moviendo el propio joystick (ver el estado SJ_GAMEOVER en
- * SimonJoy_Actualizar / SimonJoy2_ActualizarJugador), y en el modo de
- * botones arcade, presionando cualquiera de los 4 botones propios del
- * jugador (ver Botones_ActualizarJugador). Este patron de "cualquier
- * entrada del propio jugador reintenta la partida" se aplica a los tres
- * modos de juego por consistencia de interfaz.
+ * ------------------------------------------------------------------------
+ * MAPA DE PINES
+ * ------------------------------------------------------------------------
+ * Pin    Funcion                  Modo                Notas
+ * PA1    ADC1_IN1  J1 VRy         Analogico           joystick 1, eje vertical
+ * PA2    USART2_TX                AF7                 consola de depuracion (VCP del ST-Link)
+ * PA3    USART2_RX                AF7                 no usado por la aplicacion (solo TX)
+ * PA4    ADC1_IN4  J1 VRx         Analogico           joystick 1, eje horizontal (separado de PA1 a proposito)
+ * PA5    SPI1_SCK  LCD            AF5                 reloj de la pantalla, 8 MHz
+ * PA6    Buzzer                   Salida PP           libre porque SPI1 no usa MISO; alternado por software desde TIM4
+ * PA7    SPI1_MOSI LCD            AF5                 datos hacia la pantalla (driver de solo escritura)
+ * PA9    LCD RST                  Salida PP           reset hardware del ILI9341
+ * PA10   BTN2 Verde (switch)      Entrada PullUp      jugador 2
+ * PA11   BTN1 Azul (LED)          Salida PP           hacia ULN2003A #1
+ * PA12   BTN1 Verde (switch)      Entrada PullUp      jugador 1
+ * PB1    BTN2 Rojo (LED)          Salida PP           hacia ULN2003A #2
+ * PB5    BTN2 Amarillo (LED)      Salida PP           reubicado del canal averiado IN4 al IN5 del ULN2003A #2
+ * PB6    SPI1_CS   LCD            Salida PP (NSS soft) Chip Select por software
+ * PB8    BTN1 Rojo (LED)          Salida PP           hacia ULN2003A #1
+ * PB12   BTN1 Rojo (switch)       Entrada PullUp      jugador 1
+ * PB13   BTN2 Azul (switch)       Entrada PullUp      jugador 2
+ * PB14   BTN2 Verde (LED)         Salida PP           hacia ULN2003A #2
+ * PB15   BTN2 Amarillo (switch)   Entrada PullUp      jugador 2
+ * PC0    ADC1_IN10 J2 VRy2        Analogico           joystick 2, eje vertical
+ * PC1    ADC1_IN11 J2 VRx2        Analogico           joystick 2, eje horizontal
+ * PC4    BTN2 Azul (LED)          Salida PP           hacia ULN2003A #2
+ * PC5    BTN1 Amarillo (LED)      Salida PP           hacia ULN2003A #1
+ * PC6    BTN1 Azul (switch)       Entrada PullUp      jugador 1
+ * PC7    LCD DC                   Salida PP           Data/Command de la pantalla
+ * PC8    BTN1 Verde (LED)         Salida PP           hacia ULN2003A #1
+ * PC9    BTN1 Amarillo (switch)   Entrada PullUp      jugador 1
+ * PC10   BTN2 Rojo (switch)       Entrada PullUp      jugador 2
+ * PC13   B1 (boton usuario Nucleo) Entrada             pull-up externo R30=4k7 ya en la placa; ver nota de B1 mas abajo
+ * (Los pines SW/click de AMBOS joystick fueron retirados fisicamente del
+ * montaje para simplificar el cableado -- ver board_pins.h. Cada boton
+ * arcade tiene switch + LED; el LED se maneja siempre a traves de un
+ * ULN2003A, un arreglo de transistores Darlington que hace de driver de
+ * corriente, porque un pin GPIO del STM32 no puede sostener con seguridad
+ * la corriente de un LED de boton arcade en las 8 salidas simultaneas del
+ * sistema.)
  *
- * El modo Guitar Hero con sincronizacion real de canciones fue removido de
- * una version anterior para reducir la complejidad del codigo mientras el
- * desarrollo se concentraba en completar los modos de joystick y botones
- * arcade; de esa version solo permanece GuitarHero_IntentarGolpe(), el
- * boton de prueba original dentro del recorrido de diseno (DEMO_JUGANDO).
- * Con Simon + Joystick y Simon + Botones ya jugables a 2 jugadores sobre
- * hardware real, la reconstruccion completa de Guitar Hero es el siguiente
- * objetivo de desarrollo del proyecto.
+ * ------------------------------------------------------------------------
+ * RELOJES Y PERIFERICOS ACTIVOS
+ * ------------------------------------------------------------------------
+ * SPI1  - bus de la pantalla ILI9341. Modo maestro, Modo 0 (CPOL=0/CPHA=0,
+ *         el que exige el datasheet del ILI9341), NSS por software,
+ *         BaudRatePrescaler=2 => APB2 (16 MHz) / 2 = 8 MHz de reloj SPI.
+ *         Se eligio 8 MHz por prueba empirica: es la maxima velocidad que
+ *         sostuvo una imagen estable sin artefactos en este cableado fisico
+ *         concreto (mas rapido = menos margen ante ruido electrico).
+ * ADC1  - modo ESCANEO de 4 canales (J1_Y, J1_X, J2_Y, J2_X, en ese orden de
+ *         rank), 12 bits de resolucion, disparado por TRGO de TIM3 cada
+ *         20 ms, interrupcion de fin de conversion DESPUES DE CADA canal
+ *         (no solo al final de los 4), sin DMA -- ver ADC1_Joystick_Init()
+ *         y HAL_ADC_ConvCpltCallback() mas abajo.
+ * TIM3  - unico proposito: generar el TRGO (trigger interno) que dispara el
+ *         ADC1 cada 20 ms. Prescaler=1599 (16 MHz/1600 = tick de 100 us),
+ *         Period=199 (200 ticks x 100 us = 20.000 ms exactos). No genera
+ *         ninguna interrupcion propia ni señal visible en un pin.
+ * TIM4  - genera el tono del buzzer POR SOFTWARE (ver seccion BUZZER mas
+ *         abajo), alternando el pin PA6 desde su interrupcion periodica.
+ * USART2 - consola de depuracion, 115200 8N1, TX/RX habilitados pero solo se
+ *          usa TX (printf retargeteado via __io_putchar). Sale por el mismo
+ *          cable USB del ST-Link (VCP, /dev/ttyACM0 en Linux) sin cableado
+ *          adicional.
+ * SysTick - interrupcion de 1 ms del propio Cortex-M4, alimenta
+ *           HAL_IncTick()/HAL_GetTick()/HAL_Delay(); es la base de TODA la
+ *           temporizacion no bloqueante de este archivo (ver seccion
+ *           siguiente).
+ *
+ * ------------------------------------------------------------------------
+ * POR QUE EL BUZZER SE GENERA POR SOFTWARE (TIM4 + GPIO), NO POR PWM
+ * ------------------------------------------------------------------------
+ * El unico timer con un canal PWM disponible en el pin PA6 seria TIM3_CH1,
+ * pero TIM3 ya esta ocupado como disparador del ADC cada 20 ms. El F411
+ * tampoco tiene TIM13/TIM14 (esos si existen, con PWM libre, en la familia
+ * F413/F423). La solucion: TIM4 (libre) interrumpe periodicamente y cada
+ * interrupcion invierte el nivel logico de PA6 por software
+ * (Buzzer_SetSalida()/TIM4_IRQHandler en stm32f4xx_it.c) -- dos inversiones
+ * equivalen a un ciclo completo de la onda cuadrada del tono. El ARR
+ * (auto-reload) de TIM4 se recalcula en cada cambio de nota:
+ *     arr = (BUZZER_TIM_TICK_HZ / (2 * freq_hz)) - 1
+ * de forma que el timer desborda 2 veces por cada ciclo de la nota pedida.
+ * Buzzer_Actualizar() (llamada 1 vez por vuelta del bucle principal) avanza
+ * los patrones de efectos de sonido (SFX) y la musica de fondo comparando
+ * HAL_GetTick() contra la duracion de cada paso -- NUNCA usa HAL_Delay,
+ * para que el sonido conviva con el render y la lectura de entradas sin
+ * congelar nada. El buzzer es un unico pin (mono): un efecto de sonido en
+ * primer plano "congela" el cronometro de la musica de fondo mientras
+ * suena, y la retoma exactamente donde iba al terminar.
+ *
+ * ------------------------------------------------------------------------
+ * ANTIRREBOTE (DEBOUNCE) Y TEMPORIZACION NO BLOQUEANTE
+ * ------------------------------------------------------------------------
+ * Ningun temporizador de este archivo usa HAL_Delay() dentro del juego real
+ * (la UNICA excepcion es la calibracion de joystick al arrancar, ver mas
+ * abajo, que corre antes de que exista partida). El patron que se repite en
+ * TODOS los mecanismos de tiempo (antirrebote de botones, combo de salida,
+ * cooldowns de reingreso, animaciones, pasos de melodia) es: guardar el
+ * tick (HAL_GetTick()) del ultimo evento en una variable, y en cada vuelta
+ * del bucle comparar "HAL_GetTick() - tick_guardado >= UMBRAL_MS" sin
+ * bloquear nunca la ejecucion. Esto permite tener muchos "relojes" logicos
+ * concurrentes sin RTOS.
+ * Para los botones arcade especificamente (Botones_LeerColor), el criterio
+ * de antirrebote exige que un nivel NUEVO de un pin se mantenga estable
+ * durante BTN_DEBOUNCE_MS=30 ms consecutivos antes de aceptarlo como un
+ * flanco de presion real -- esto filtra el rebote mecanico del contacto
+ * (varias transiciones de nivel en los primeros milisegundos tras
+ * presionar/soltar) sin depender de cuanto tarde cada vuelta del bucle.
+ *
+ * ------------------------------------------------------------------------
+ * JOYSTICK: ADC POR TIM3, FILTRO EMA, ZONA MUERTA Y CALIBRACION DE CENTRO
+ * ------------------------------------------------------------------------
+ * Cada canal leido por HAL_ADC_ConvCpltCallback() se suaviza con un filtro
+ * EMA (media movil exponencial, filtro += (crudo-filtro)/ADC_FILTRO_N): un
+ * solo acumulador por eje, sin guardar historial de muestras, adecuado para
+ * un MCU sin FPU dedicada a esta tarea. Ademas, si la lectura filtrada cae
+ * dentro de una banda (JOY_ZONA_MUERTA) alrededor del centro medido, se
+ * fuerza al centro EXACTO -- esto elimina el temblor residual de ruido que
+ * el filtro por si solo no elimina del todo, evitando direcciones falsas
+ * con el joystick en reposo. El potenciometro fisico de este montaje NO
+ * descansa exactamente en 2048 (mitad teorica de 12 bits) por tolerancias
+ * de fabricacion; por eso, 300 ms despues de arrancar el ADC (HAL_Delay
+ * bloqueante, la unica excepcion mencionada arriba, aceptable porque corre
+ * antes de que exista juego real), se mide el centro REAL de cada eje y
+ * todos los umbrales de direccion (Joy_Umbrales(), JOY_UMBRAL_DESVIO) se
+ * calculan relativos a ese centro medido, no a un valor fijo.
+ *
+ * ------------------------------------------------------------------------
+ * LA FSM DE PANTALLAS (DemoScreen_t)
+ * ------------------------------------------------------------------------
+ *   DEMO_SPLASH -> DEMO_JUGADORES_{1,2} -> DEMO_INICIALES ->
+ *   DEMO_MODO_{SIMON,SIMONJOY,GUITAR} -> [DEMO_MENU_DIFICULTAD si el modo
+ *   elegido fue Guitar Hero] -> DEMO_CONTEO_{3,2,1,GO} -> [juego real] ->
+ *   DEMO_RESULTADO / pantalla de game over propia del modo.
+ * El menu de MODO usa seleccion DIRECTA (a diferencia del de JUGADORES, que
+ * es cursor+confirmar): presionar cualquier boton arcade arranca BOTONES ya
+ * mismo, y mover cualquier joystick arranca SIMONJOY ya mismo -- el metodo
+ * de entrada ES la eleccion. Se exige ver el joystick centrado al entrar a
+ * esta pantalla antes de aceptar un movimiento, para no heredar el
+ * "arrastre" del menu anterior y disparar SIMONJOY sin querer.
+ * Demo_Enter(screen) prepara cada pantalla nueva; Renderer_Update*() la
+ * redibuja de forma incremental (solo lo que cambia) cuando el cambio es
+ * menor (ej. mover un cursor), para no repintar toda la pantalla por SPI en
+ * cada frame.
+ * Salida de emergencia: mantener Rojo+Amarillo del MISMO jugador durante 3 s
+ * (ComboSalir_Detectado(), COMBO_SALIR_MS) resetea duro a DEMO_SPLASH desde
+ * CUALQUIER pantalla o modo -- se revisa con maxima prioridad al inicio del
+ * bucle principal, antes que cualquier otra logica, porque es la UNICA via
+ * de salida ahora que B1 no es alcanzable (ver nota siguiente).
+ *
+ * ------------------------------------------------------------------------
+ * B1 (PC13) Y EL REINTENTO TRAS GAME OVER
+ * ------------------------------------------------------------------------
+ * B1 fue el unico boton de tipo "click" del sistema mientras el cabinet
+ * estaba en construccion (los pines SW de ambos joystick se retiraron
+ * fisicamente para simplificar el cableado). Con el cabinet ya armado, B1
+ * quedo FISICAMENTE INACCESIBLE (sellado dentro de la caja) -- el codigo
+ * que lo maneja (Boton_B1_Flanco()) permanece por compatibilidad pero es
+ * codigo muerto inalcanzable en la practica; no confiar en comentarios
+ * viejos que digan "B1=confirmar". El reintento tras perder una partida NO
+ * depende de ningun boton dedicado: en Simon+Joystick se dispara moviendo
+ * el propio stick (estado SJ_GAMEOVER en SimonJoy_Actualizar /
+ * SimonJoy2_ActualizarJugador), en Simon con botones presionando
+ * cualquiera de los 4 botones propios del jugador (Botones_ActualizarJugador),
+ * y en Guitar Hero de la misma forma (GuitarHero_ActualizarJugador) -- este
+ * patron de "cualquier entrada del propio jugador reintenta" se aplica a
+ * los 3 modos por consistencia de interfaz.
+ *
+ * ------------------------------------------------------------------------
+ * GUITAR HERO: MAQUETA DE DISEÑO vs. MODO REAL
+ * ------------------------------------------------------------------------
+ * La pantalla DEMO_JUGANDO y GuitarHero_IntentarGolpe() son la maqueta
+ * visual ORIGINAL del modo (2 notas fijas, un solo boton de prueba B1 --
+ * hoy inalcanzable), anterior al modo jugable actual. El modo REAL y
+ * jugable (1 o 2 jugadores) vive en GuitarHero_ActualizarJugador(),
+ * GuitarHero_IniciarSolo()/2_IniciarAmbos() y GuitarHero_ProcesarGolpe():
+ * carriles de 4 colores con notas que caen a velocidad constante hacia una
+ * zona de golpe fija, generadas con el mismo generador congruencial lineal
+ * (LCG) de 32 bits usado en el resto del proyecto. En el modo de 1 jugador,
+ * las 4 notas caen sobre el MISMO set fisico de 4 botones (pantalla
+ * completa); por eso la lectura de botones de ese modo usa
+ * Botones_LeerColoresBitmask() (en vez de Botones_LeerColor(), que solo
+ * reporta el primer color con flanco de cada tick) -- para no perder un
+ * golpe cuando 2 notas de colores distintos exigen un boton cada una
+ * dentro del mismo tick de ~33 ms.
  ******************************************************************************
  */
 
@@ -287,6 +466,42 @@ static uint8_t Botones_LeerColor(uint8_t p) {   // p = jugador logico (0 o 1); r
         }
     }
     return 0xFF;   // ningun boton tuvo flanco de presion estable este tick
+}
+
+/* Variante de Botones_LeerColor SOLO para Guitar Hero a 1 jugador: en ese
+ * modo las 4 notas caen sobre el mismo set fisico de 4 botones, asi que dos
+ * notas de colores distintos pueden necesitar un golpe cada una dentro del
+ * mismo tick de ~33ms. Botones_LeerColor corta en el primer flanco que
+ * encuentra (return c) y deja SIN LEER los colores restantes ese mismo
+ * tick -- ese flanco recien se detecta en el tick siguiente, a veces ya
+ * fuera de la ventana de golpe (se sentia como "lag" o como si no marcara
+ * el segundo golpe seguido). Esta version recorre los 4 colores completos
+ * y devuelve un bitmask (bit c = 1 si el color c tuvo flanco de presion
+ * estable este tick), usando el MISMO estado de antirrebote
+ * (btn_estable/btn_prev/btn_tick_cambio) que Botones_LeerColor -- no se
+ * llaman las dos funciones sobre el mismo jugador en el mismo tick, asi que
+ * no hay conflicto por compartir ese estado. */
+static uint8_t Botones_LeerColoresBitmask(uint8_t p) {
+    if (btn_modo_1p || guitar_modo_1p) p = 0;
+    uint8_t bitmask = 0;   // bit c en 1 = hubo flanco de presion estable de ese color este tick
+    for (uint8_t c = 0; c < 4; c++) {   // a diferencia de Botones_LeerColor, SIEMPRE recorre los 4 colores (nunca corta antes)
+        GPIO_PinState cur = HAL_GPIO_ReadPin(BTN_SW[p][c].port, BTN_SW[p][c].pin);
+
+        if (cur != btn_estable[p][c]) {
+            btn_estable[p][c]    = cur;
+            btn_tick_cambio[p][c] = HAL_GetTick();
+            continue;
+        }
+        if (HAL_GetTick() - btn_tick_cambio[p][c] < BTN_DEBOUNCE_MS) continue;
+
+        uint8_t flanco = (btn_prev[p][c] == GPIO_PIN_SET && cur == GPIO_PIN_RESET);
+        btn_prev[p][c] = cur;
+        if (flanco) {
+            //printf("[INPUT] boton J%u = %s\r\n", (unsigned)(p + 1), COLOR_NOMBRE[c]);
+            bitmask = (uint8_t)(bitmask | (1u << c));   // marca este color y sigue revisando los demas (no corta el for)
+        }
+    }
+    return bitmask;
 }
 
 /* === PROTOTIPOS PRIVADOS ================================================== */
@@ -2555,6 +2770,40 @@ static void GuitarHero_IniciarSolo(void) {   // arranca Guitar Hero a 1 solo jug
     GuitarHero_ReiniciarJugador(1);   // ya dibuja la pantalla completa nueva (ver mas arriba), no hace falta un FillScreen previo
 }
 
+/* Busca la nota mas cercana del carril `color` para el jugador p y la
+ * puntua (o registra el fallo). Extraida de GuitarHero_ActualizarJugador
+ * sin cambiar su logica, para poder invocarla una vez por color golpeado
+ * -- en 2 jugadores sigue siendo, como antes, como maximo una vez por tick
+ * (un solo `color` via Botones_LeerColor); en 1 jugador puede invocarse
+ * varias veces en el mismo tick (una por cada bit de
+ * Botones_LeerColoresBitmask), para no perder golpes de colores distintos
+ * que caen en el mismo tick de ~33ms. */
+static void GuitarHero_ProcesarGolpe(uint8_t p, uint8_t base, uint8_t color) {
+    int16_t mejor_dist = 0x7FFF;   // arranca en el maximo posible
+    int8_t  mejor_i    = -1;   // indice de la mejor nota encontrada del carril del color presionado, -1 = ninguna
+    for (uint8_t i = 0; i < GH_NOTAS_POR_JUG; i++) {   // busca entre las notas de ESTE jugador
+        Nota_t *n = &gs.notas[base + i];
+        if (!n->activa || n->carril != color) continue;   // ignora notas apagadas o de OTRO carril
+        int16_t centro_nota = (int16_t)(n->x_rel + NOTE_W / 2);   // centro X de la nota
+        int16_t dist = (int16_t)((centro_nota > (int16_t)GH_ZONA_CX) ? (centro_nota - (int16_t)GH_ZONA_CX) : ((int16_t)GH_ZONA_CX - centro_nota));
+        if (dist < mejor_dist) { mejor_dist = dist; mejor_i = (int8_t)i; }   // se queda con la mas cercana
+    }
+    uint16_t hit_ok = guitar_modo_1p ? GH_HIT_OK_1P : GH_HIT_OK_2P;   // ventana "OK"
+    if (mejor_i >= 0 && mejor_dist <= (int16_t)hit_ok) {   // encontro una nota dentro de la ventana de golpe
+        Nota_t *n = &gs.notas[base + mejor_i];
+        if      (mejor_dist <= (int16_t)HIT_PERFECT) { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_PERFECT); }
+        else if (mejor_dist <= (int16_t)HIT_GOOD)    { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_GOOD); }
+        else                                          { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_OK); }
+        gs.j[p].combo++;   // suma combo por acierto
+        n->activa = 0;   // desactiva la nota golpeada
+        Buzzer_Beep(80);   // beep corto de golpe
+        if (guitar_modo_1p) Renderer_GH1P_FlashZona(color);   // flash de impacto
+        else                 Renderer_GH_FlashZona(p, color);
+    } else {   // fallo
+        gs.j[p].combo = 0;   // corta combo
+    }
+}
+
 static void GuitarHero_ActualizarJugador(uint8_t p) {   // tick no bloqueante de UN jugador de Guitar Hero: spawnea notas, lee golpes, mueve/dibuja notas y detecta fin de ronda
     /* revierte el flash blanco de impacto del tick anterior (si hubo uno) --
      * ver Renderer_GH_FlashZona/ActualizarFlashes en renderer.c, esto le da
@@ -2599,49 +2848,26 @@ static void GuitarHero_ActualizarJugador(uint8_t p) {   // tick no bloqueante de
     /* Input: el color propio del jugador caza la nota mas cercana de ESE
      * carril (no la mas cercana de cualquier color, a diferencia de la
      * maqueta original de 1 solo boton). Todas las notas se golpean al
-     * toque (sin mantener presionado). */
-    uint8_t color = Botones_LeerColor(p);   // intenta leer un flanco de boton de este jugador (SIEMPRE se llama, cooldown o no, para no desincronizar su antirrebote interno -- mismo criterio que el game over de Botones_ActualizarJugador)
-    if (color != 0xFF && (ahora - gh_ultimo_input_tick[p]) >= GH_REARME_MIN_MS) {   // presiono algun boton este tick Y ya paso el cooldown corto de Guitar Hero (ver GH_REARME_MIN_MS)
-        gh_ultimo_input_tick[p] = ahora;   // marca el instante de esta entrada aceptada, para el cooldown de la proxima
-        int16_t mejor_dist = 0x7FFF;   // arranca en el maximo posible
-        int8_t  mejor_i    = -1;   // indice de la mejor nota encontrada del carril del color presionado, -1 = ninguna
-        for (uint8_t i = 0; i < GH_NOTAS_POR_JUG; i++) {   // busca entre las notas de ESTE jugador
-            Nota_t *n = &gs.notas[base + i];
-            if (!n->activa || n->carril != color) continue;   // ignora notas apagadas o de OTRO carril (color) distinto al presionado
-            int16_t centro_nota = (int16_t)(n->x_rel + NOTE_W / 2);   // centro X de la nota
-            int16_t dist = (int16_t)((centro_nota > (int16_t)GH_ZONA_CX) ? (centro_nota - (int16_t)GH_ZONA_CX) : ((int16_t)GH_ZONA_CX - centro_nota));   // distancia absoluta al centro de la zona de golpe
-            if (dist < mejor_dist) { mejor_dist = dist; mejor_i = (int8_t)i; }   // se queda con la mas cercana de ese carril
+     * toque (sin mantener presionado).
+     *
+     * En 1 jugador las 4 notas caen sobre el mismo set fisico de botones,
+     * asi que puede hacer falta procesar mas de un color en el mismo tick
+     * (ver Botones_LeerColoresBitmask); en 2 jugadores se deja EXACTAMENTE
+     * el mismo comportamiento de siempre (un solo color por tick, via
+     * Botones_LeerColor). */
+    if (guitar_modo_1p) {
+        uint8_t bitmask = Botones_LeerColoresBitmask(p);   // SIEMPRE se llama (cooldown o no), mismo criterio que antes con Botones_LeerColor
+        if (bitmask && (ahora - gh_ultimo_input_tick[p]) >= GH_REARME_MIN_MS) {
+            gh_ultimo_input_tick[p] = ahora;
+            for (uint8_t color = 0; color < 4; color++) {
+                if (bitmask & (uint8_t)(1u << color)) GuitarHero_ProcesarGolpe(p, base, color);
+            }
         }
-        uint16_t hit_ok = guitar_modo_1p ? GH_HIT_OK_1P : GH_HIT_OK_2P;   // ventana "OK" atada a la geometria real de este layout (radio zona + radio nota) -- asi el golpe cuenta apenas la nota TOCA el circulo, en los 2 modos
-        if (mejor_i >= 0 && mejor_dist <= (int16_t)hit_ok) {   // encontro una nota de ese color Y esta dentro de la ventana de golpe
-            Nota_t *n = &gs.notas[base + mejor_i];   // nota que se va a puntuar
-            const char *calidad;   // texto de calidad del golpe, solo para el log
-            if      (mejor_dist <= (int16_t)HIT_PERFECT) { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_PERFECT); calidad = "PERFECT"; }   // dentro de la ventana mas angosta -> maximo puntaje
-            else if (mejor_dist <= (int16_t)HIT_GOOD)    { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_GOOD);    calidad = "GOOD"; }      // ventana intermedia -> puntaje medio
-            else                                          { gs.j[p].puntaje = (uint16_t)(gs.j[p].puntaje + SCORE_OK);     calidad = "OK"; }        // ventana mas ancha -> puntaje minimo
-            gs.j[p].combo++;   // suma combo por el golpe acertado
-            n->activa = 0;   // la nota golpeada se desactiva (libera el slot para una nueva)
-            Buzzer_Beep(80);   // beep corto de golpe
-            if (guitar_modo_1p) Renderer_GH1P_FlashZona(color);   // dispara el flash blanco de impacto en la zona de golpe de este color
-            else                 Renderer_GH_FlashZona(p, color);
-            printf("[GUITARHERO] P%u color=%u dist=%d %s puntaje=%u combo=%u\r\n",   // log completo del golpe
-                   p, color, mejor_dist, calidad, gs.j[p].puntaje, gs.j[p].combo);
-        } else {   // no habia ninguna nota de ese color en rango -- fallo
-            gs.j[p].combo = 0;   /* boton sin nota propia en rango -- corta combo */
-            /* Registro de diagnostico del fallo (temporal, para diagnosticar
-             * el reporte de "los botones dejan de responder" en Guitar Hero
-             * a 2 jugadores): antes este caso no dejaba ningun rastro en la
-             * consola, indistinguible de un boton que simplemente no se leyo.
-             * Distingue el caso real -- no habia NINGUNA nota activa de ese
-             * color todavia (hay que esperar a que spawnee y se acerque) --
-             * del caso de haber apretado demasiado pronto/tarde respecto a
-             * una nota que si estaba en pantalla. */
-            if (mejor_i < 0)   // caso 1: no habia NINGUNA nota activa de ese carril todavia
-                printf("[GUITARHERO] P%u color=%u MISS: sin nota activa en ese carril (spawneadas=%u/%u)\r\n",
-                       p, color, (unsigned)gs.j[p].notas_spawneadas, (unsigned)NOTES_PER_GAME);
-            else   // caso 2: SI habia una nota de ese carril, pero fuera de la ventana de golpe (muy pronto o muy tarde)
-                printf("[GUITARHERO] P%u color=%u MISS: nota mas cercana a dist=%d (fuera de HIT_OK=%d)\r\n",
-                       p, color, mejor_dist, (int)hit_ok);
+    } else {
+        uint8_t color = Botones_LeerColor(p);   // intenta leer un flanco de boton de este jugador (SIEMPRE se llama, cooldown o no, para no desincronizar su antirrebote interno -- mismo criterio que el game over de Botones_ActualizarJugador)
+        if (color != 0xFF && (ahora - gh_ultimo_input_tick[p]) >= GH_REARME_MIN_MS) {   // presiono algun boton este tick Y ya paso el cooldown corto de Guitar Hero (ver GH_REARME_MIN_MS)
+            gh_ultimo_input_tick[p] = ahora;   // marca el instante de esta entrada aceptada, para el cooldown de la proxima
+            GuitarHero_ProcesarGolpe(p, base, color);
         }
     }
 
@@ -3005,7 +3231,7 @@ int main(void) {   // punto de entrada del programa: inicializa todo el hardware
     HAL_TIM_Base_Start(&htim3);   // arranca TIM3 -- desde aca en adelante, el ADC se dispara cada 20ms
     HAL_ADC_Start_IT(&hadc1);   // arranca el ADC en modo interrupcion -- desde aca, HAL_ADC_ConvCpltCallback empieza a recibir conversiones
 
-    printf("\r\n=== Beat Clash boot OK (PA2/PA3 @ 115200 8N1) ===\r\n");   // primer mensaje de arranque por consola, confirma que el UART esta vivo
+    printf("\r\n=== Final Box boot OK (PA2/PA3 @ 115200 8N1) ===\r\n");   // primer mensaje de arranque por consola, confirma que el UART esta vivo
 
     /* Indicador visual de calibración */
     ILI9341_FillScreen(COLOR_BLACK);   // pantalla negra mientras se calibra (todavia no hay nada mas que mostrar)

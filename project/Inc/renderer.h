@@ -177,8 +177,8 @@ void Renderer_EraseNotaTrail(const Nota_t *nota, uint16_t x_off, uint8_t speed);
  * duplicar los numeros magicos -- ver GH_HIT_OK_2P/GH_HIT_OK_1P mas abajo. */
 #define GH_ZONA_R    13   // radio de la zona de golpe en el layout de 2 jugadores
 #define GH_NOTE_R    12   // radio de las notas en el layout de 2 jugadores
-#define GH1P_ZONA_R  24   // radio de la zona de golpe en el layout de 1 jugador (pantalla completa)
-#define GH1P_NOTE_R  22   // radio de las notas en el layout de 1 jugador (pantalla completa)
+#define GH1P_ZONA_R  16   // radio de la zona de golpe en el layout de 1 jugador (pantalla completa)
+#define GH1P_NOTE_R  14   // radio de las notas en el layout de 1 jugador (pantalla completa)
 
 /* Distancia entre centros a la que la nota y la zona de golpe EMPIEZAN a
  * tocarse visualmente (suma de radios) -- usada como ventana "OK" (el

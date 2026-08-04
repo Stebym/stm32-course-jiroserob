@@ -1,19 +1,103 @@
 /**
  ******************************************************************************
- * @file    renderer.c
- * @author  Jimmy Stebym Rosero Barrera
- * @brief   Motor de renderizado Beat Clash — ILI9341 320x240 paisaje.
+ * @file    : renderer.c
+ * @author  : Jimmy Stebym Rosero Barrera
+ * @brief   : Capa de PRESENTACION del juego: traduce el estado de juego
+ *            (GameState_t, EstadoJugador_t, definidos en game_state.h) en
+ *            llamadas a las primitivas de dibujo de ili9341.c. No lee
+ *            botones ni joystick, no decide reglas de juego -- solo dibuja
+ *            lo que main.c le pide, e intenta hacerlo con el MINIMO trafico
+ *            SPI posible (ver "RENDERIZADO DELTA" mas abajo).
  *
- * Layout pantalla 320x240:
+ * ------------------------------------------------------------------------
+ * DOS FAMILIAS DE LAYOUT: "COCKPIT" (cara a cara) Y PANTALLA COMPLETA (1P)
+ * ------------------------------------------------------------------------
+ * Los 3 modos reales del juego (Simon Botones, Simon+Joystick, Guitar Hero)
+ * se dibujan en orientacion RETRATO (240x320) y existen en 2 variantes:
+ *
+ *   - 2 JUGADORES ("Cockpit"): la pantalla se divide en 2 mitades
+ *     horizontales; cada jugador ve SU mitad "al derecho" desde su lado
+ *     fisico del cabinet -- para lograr eso, la mitad del jugador 2 se
+ *     dibuja ROTADA 180 grados respecto a coordenadas de pantalla. Las
+ *     funciones Cockpit_FillRect/Cockpit_DrawString/Cockpit_Punto (y las
+ *     variantes de texto *_180) son la capa de transformacion: reciben
+ *     coordenadas LOCALES a la mitad de UN jugador (0,0 = esquina de SU
+ *     mitad tal como la ve el sentado ahi) y las convierten a coordenadas
+ *     ABSOLUTAS de pantalla, aplicando el espejo si jugador==1. El resto
+ *     del codigo de cada modo (Cockpit_*, gh_*, cockpit_*) dibuja siempre
+ *     en local y nunca necesita saber si esta rotado o no.
+ *   - 1 JUGADOR (pantalla completa): sin division ni rotacion -- las
+ *     funciones *1P_* dibujan directo en coordenadas absolutas, con
+ *     elementos mas grandes al no compartir la pantalla con otro jugador
+ *     (por ejemplo GH1P_NOTE_R=22 vs GH_NOTE_R=12 en el layout de 2
+ *     jugadores).
+ *
+ * Existe ademas un TERCER layout, mas antiguo: el de la pantalla
+ * DEMO_JUGANDO (Renderer_DrawBackground, ver main.c), en orientacion
+ * PAISAJE (320x240), que fue la maqueta visual ORIGINAL de Guitar Hero
+ * antes del modo real por Cockpit/1P descrito arriba:
  *   P1 x=[0..158]   Divisor x=[159..160]   P2 x=[161..319]
  *   Score bar: y=[0..24]
- *   Lane 0 (R): y=[25..76]    Sep: y=[77..78]
- *   Lane 1 (G): y=[79..130]   Sep: y=[131..132]
- *   Lane 2 (B): y=[133..184]  Sep: y=[185..186]
- *   Lane 3 (Y): y=[187..238]
+ *   Carril 0 (Rojo):     y=[25..76]    Separador: y=[77..78]
+ *   Carril 1 (Verde):    y=[79..130]   Separador: y=[131..132]
+ *   Carril 2 (Azul):     y=[133..184]  Separador: y=[185..186]
+ *   Carril 3 (Amarillo): y=[187..238]
+ * Este layout sigue existiendo (codigo alcanzable solo desde la pantalla
+ * DEMO_JUGANDO, hoy dependiente de B1 -- ver la nota de B1 en la cabecera
+ * de main.c) pero NO es el que usan los 3 modos jugables actuales.
  *
- * Fuente bitmap 5x7 (col-major, bit0=fila top) cubre ASCII 32-90.
- * Render delta en JUGANDO: solo actualiza los px que cambian por tick.
+ * ------------------------------------------------------------------------
+ * RENDERIZADO DELTA: POR QUE NO SE REPINTA TODA LA PANTALLA CADA FRAME
+ * ------------------------------------------------------------------------
+ * El bus SPI de la pantalla es el recurso mas caro del sistema (ver la
+ * cabecera de ili9341.c). Redibujar 240x320 pixeles completos (153.600
+ * bytes en RGB565) a 8 MHz tomaria varios milisegundos solo en
+ * transmision, un bocado grande del presupuesto de ~33 ms por frame
+ * (RENDER_TICK_MS en main.c). Por eso casi ninguna funcion de este archivo
+ * redibuja "todo": cada Renderer_Update*()/Renderer_*_Actualizar*() recibe
+ * el estado ANTERIOR y el NUEVO, compara, y solo emite las llamadas de
+ * dibujo necesarias para la DIFERENCIA -- por ejemplo,
+ * Renderer_UpdateSeleccionModo() solo apaga la tarjeta vieja y prende la
+ * nueva (2 llamadas), nunca redibuja las 3 tarjetas del menu; o
+ * Renderer_GH_EraseNotaTrail() borra unicamente la franja rectangular que
+ * una nota dejo atras al moverse (bounding box de su posicion anterior),
+ * no el carril completo. Las funciones Renderer_Draw*() (sin "Update") si
+ * dibujan una pantalla/mitad completa, pero se llaman UNA sola vez al
+ * entrar a esa pantalla (Demo_Enter en main.c), no en cada tick.
+ *
+ * ------------------------------------------------------------------------
+ * FUENTE DE TEXTO Y HUD
+ * ------------------------------------------------------------------------
+ * Fuente bitmap propia 5x7 (formato columna-mayor, bit 0 = fila superior),
+ * cubre ASCII 32-90 (espacio, digitos, mayusculas y signos basicos -- ver
+ * Texto_Sanear(), que reemplaza cualquier byte fuera de ese rango por '-'
+ * antes de dibujar, para no mostrar simbolos corruptos si un nombre de
+ * jugador trae un caracter no soportado). draw_char/draw_string son la
+ * base; existen variantes centradas (draw_string_c), numericas
+ * (draw_uint16) y rotadas 180° (draw_char_180/draw_string_180) para la
+ * mitad "de espaldas" del layout Cockpit. El puntaje de Guitar Hero usa
+ * ademas digitos estilo 7 segmentos dibujados a mano (draw_seg_digit),
+ * mas legibles a la distancia que la fuente 5x7 pequeña.
+ *
+ * ------------------------------------------------------------------------
+ * COLORES Y GEOMETRIA DE GUITAR HERO
+ * ------------------------------------------------------------------------
+ * Las notas y zonas de golpe son circulos concentricos (cuerpo del color
+ * del carril + nucleo mas chico de otro color, dibujados en 1 sola pasada
+ * con ILI9341_FillCircle2 para no abrir el doble de ventanas SPI, ver la
+ * cabecera de ili9341.c). El layout de 1 jugador usa radios notablemente
+ * mas grandes que el de 2 (GH1P_NOTE_R=22/GH1P_ZONA_R=24 vs GH_NOTE_R=12/
+ * GH_ZONA_R=13); para la zona de golpe de ese layout (que solo se
+ * redibuja en el tick de un acierto, no en cada frame, pero con un circulo
+ * mucho mas grande) existe gh1p_fill_circle_fast(): arma el CUADRADO
+ * completo alrededor del circulo en RAM (relleno de negro -- el fondo del
+ * carril -- fuera del circulo) y lo manda en UNA sola ventana SPI en vez
+ * de ~45-49, para no acumular sobrecarga de SPI justo en el instante en
+ * que el jugador presiona un boton. Deliberadamente NO se aplica el mismo
+ * truco al dibujo de las notas en movimiento (Renderer_GH1P_DrawNota),
+ * porque esa si corre en TODOS los ticks y un fondo "negro" a ciegas
+ * podria borrar el anillo de la zona de golpe cuando una nota pasa
+ * encima -- ver el comentario junto a gh1p_fill_circle_fast().
  ******************************************************************************
  */
 
@@ -110,8 +194,9 @@ static const uint8_t font5x7[][5] = {
 
 static void draw_char(uint16_t x, uint16_t y, char c,   // dibuja UN caracter de la fuente 5x7 en (x,y), escalado
                       uint16_t fg, uint16_t bg, uint8_t scale) {
-    if (c < 32 || c > 90) c = '?';                    // fuera del rango cubierto por font5x7 (32-90) -> se dibuja '?' en vez de leer memoria fuera de la tabla
-    const uint8_t *g = font5x7[(uint8_t)c - 32];       // puntero a las 5 columnas de bits del glifo de "c" (offset -32 porque la tabla arranca en el espacio, ASCII 32)
+    if (c >= 'a' && c <= 'z') c = (char)(c - 32);       // Convierte minusculas a MAYUSCULAS automaticamente
+    if (c < 32 || c > 90) c = '?';                    // fuera del rango cubierto por font5x7 (32-90) -> se dibuja '?'
+    const uint8_t *g = font5x7[(uint8_t)c - 32];
     /* Fondo del slot del caracter */
     ILI9341_FillRect(x, y, CHAR_ADV(scale), CHAR_H(scale), bg);  // pinta todo el rectangulo del caracter con el color de fondo antes de dibujar los pixeles del glifo encima
     for (uint8_t col = 0; col < 5; col++) {            // recorre las 5 columnas del glifo, izquierda a derecha
@@ -311,7 +396,7 @@ void Renderer_DrawSplash(void) {   // dibuja la pantalla de bienvenida (imagen d
     /* Subtitulo parpadeante "LISTO PARA JUGAR?" en y=213 — dibujado por
      * Renderer_Update (se actualiza cada 500ms en el dispatcher) */
 
-    draw_string_c(LCD_W / 2, 226, "B1 O UN BOTON PARA CONTINUAR",
+    draw_string_c(LCD_W / 2, 226, "UN BOTON PARA CONTINUAR",
                   COLOR_CYAN, COLOR_DARKGRAY, 1);  // instruccion fija de como avanzar, centrada
 }
 
@@ -1298,10 +1383,79 @@ static inline uint16_t gh1p_note_cy(uint8_t carril) {   // y (centro) de un carr
  * un solo jugador (sin dimension de jugador). */
 static uint8_t gh1p_flash_pendiente[4];
 
+/* --- Guitar Hero 1P: circulo relleno en UNA sola ventana SPI --------------
+ * ILI9341_FillCircle/FillCircle2 (las que usan Simon y Guitar Hero a 2
+ * jugadores, sin tocarlas) abren una ventana SPI nueva POR CADA FILA del
+ * circulo. Con los radios de 2 jugadores (12-13px, ~25-27 filas) el costo
+ * es aceptable, pero los de este modo (GH1P_NOTE_R=22, GH1P_ZONA_R=24, casi
+ * el doble de filas, ~45-49) acumulan bastante mas sobrecarga de SPI por
+ * fila -- eso se sentia como una pequeña pausa justo al acertar un golpe
+ * (el flash blanco de la zona y su reversion un frame despues son circulos
+ * de radio GRANDE que solo se dibujan en el tick del golpe, no en cada
+ * tick), y si el frame se pasaba de los 33ms del loop, se perdia la
+ * lectura de un boton de ese mismo tick.
+ *
+ * Esta version arma el cuadrado completo alrededor del circulo en RAM
+ * (relleno de `color_bg` fuera del circulo/anillo) y lo manda en UNA sola
+ * ventana SPI -- 1 transaccion en vez de ~45-49. SOLO se usa para la zona
+ * de golpe (gh1p_draw_zona / Renderer_GH1P_FlashZona), que en el momento en
+ * que se dibuja no tiene ninguna nota superpuesta pendiente de conservar
+ * (la nota recien golpeada ya quedo inactiva antes de llamar al flash, y
+ * cualquier nota activa se vuelve a dibujar despues, en el mismo tick, con
+ * Renderer_GH1P_DrawNota) -- por eso Renderer_GH1P_DrawNota NO se toca y
+ * sigue usando ILI9341_FillCircle2 tal como estaba, para no arriesgar el
+ * dibujo de las notas que corre en TODOS los ticks. */
+#define GH1P_CBUF_R    GH1P_ZONA_R                 // el mayor de los 2 radios usados en este modo (zona > nota)
+#define GH1P_CBUF_DIM  (2 * GH1P_CBUF_R + 1)
+static uint8_t gh1p_circle_buf[GH1P_CBUF_DIM * GH1P_CBUF_DIM * 2];
+
+static void gh1p_fill_circle_fast(int16_t xc, int16_t yc, int16_t r_out, uint16_t color_out,
+                                   int16_t r_in, uint16_t color_in, uint16_t color_bg) {
+    int16_t bx0 = (int16_t)(xc - r_out), by0 = (int16_t)(yc - r_out);   // cuadrado SIN recortar que rodea el circulo
+    int16_t bx1 = (int16_t)(xc + r_out), by1 = (int16_t)(yc + r_out);
+    if (bx1 < 0 || by1 < 0 || bx0 >= (int16_t)ILI9341_W || by0 >= (int16_t)ILI9341_H) return;   // el cuadrado completo cae fuera de pantalla
+
+    int16_t cx0 = (bx0 < 0) ? 0 : bx0;                                   // recorta contra los bordes de pantalla
+    int16_t cy0 = (by0 < 0) ? 0 : by0;
+    int16_t cx1 = (bx1 >= (int16_t)ILI9341_W) ? (int16_t)(ILI9341_W - 1) : bx1;
+    int16_t cy1 = (by1 >= (int16_t)ILI9341_H) ? (int16_t)(ILI9341_H - 1) : by1;
+    uint16_t w = (uint16_t)(cx1 - cx0 + 1);
+    uint16_t h = (uint16_t)(cy1 - cy0 + 1);
+    if (w == 0 || h == 0 || w > GH1P_CBUF_DIM || h > GH1P_CBUF_DIM) return;   // seguridad: nunca exceder el buffer estatico
+
+    uint8_t hi_out = (uint8_t)(color_out >> 8), lo_out = (uint8_t)(color_out & 0xFF);
+    uint8_t hi_in  = (uint8_t)(color_in  >> 8), lo_in  = (uint8_t)(color_in  & 0xFF);
+    uint8_t hi_bg  = (uint8_t)(color_bg  >> 8), lo_bg  = (uint8_t)(color_bg  & 0xFF);
+
+    for (int16_t y = cy0; y <= cy1; y++) {   // arma en RAM cada fila del cuadrado completo (circulo + fondo alrededor)
+        int16_t ry = (int16_t)(y - yc);
+        int32_t dx_out = (int32_t)r_out * r_out - (int32_t)ry * ry;
+        int16_t half_out = -1;
+        if (dx_out >= 0) { half_out = 0; while ((int32_t)(half_out + 1) * (half_out + 1) <= dx_out) half_out++; }
+        int16_t half_in = -1;
+        if (r_in > 0) {
+            int32_t dx_in = (int32_t)r_in * r_in - (int32_t)ry * ry;
+            if (dx_in >= 0) { half_in = 0; while ((int32_t)(half_in + 1) * (half_in + 1) <= dx_in) half_in++; }
+        }
+        uint8_t *row = &gh1p_circle_buf[(uint32_t)(y - cy0) * w * 2];
+        for (uint16_t i = 0; i < w; i++) {
+            int16_t rx = (int16_t)((cx0 + (int16_t)i) - xc);
+            uint8_t hi, lo;
+            if      (half_in  >= 0 && rx >= -half_in  && rx <= half_in)  { hi = hi_in;  lo = lo_in;  }   // nucleo interior
+            else if (half_out >= 0 && rx >= -half_out && rx <= half_out) { hi = hi_out; lo = lo_out; }   // anillo/cuerpo exterior
+            else                                                          { hi = hi_bg;  lo = lo_bg;  }   // fuera del circulo -- fondo
+            row[i * 2] = hi; row[i * 2 + 1] = lo;
+        }
+    }
+    ILI9341_SetWindow((uint16_t)cx0, (uint16_t)cy0, (uint16_t)cx1, (uint16_t)cy1);   // UNA sola ventana para todo el cuadrado
+    ILI9341_WritePixels(gh1p_circle_buf, (uint32_t)w * h * 2);                        // UN solo envio de todos los pixeles
+    ILI9341_EndWrite();
+}
+
 static void gh1p_draw_zona(uint8_t c, uint16_t ly) {   // zona de golpe circular de un carril, layout de pantalla completa
     int16_t acx = (int16_t)GH_ZONA_CX;                 // x absoluta = local (el modo de 1 jugador nunca rota ni desplaza en x)
     int16_t acy = (int16_t)(ly + GH1P_LANE_H / 2);      // y absoluta = local (idem)
-    ILI9341_FillCircle2(acx, acy, GH1P_ZONA_R, NOTE_COLOR[c], GH1P_ZONA_R - 6, PRESS_COLOR[c]);   // anillo + centro "presionado" en 1 solo pase de SPI
+    gh1p_fill_circle_fast(acx, acy, GH1P_ZONA_R, NOTE_COLOR[c], GH1P_ZONA_R - 6, PRESS_COLOR[c], COLOR_BLACK);   // anillo + centro "presionado" en 1 sola ventana SPI
 }
 
 static void gh1p_draw_carril(uint8_t c) {   // dibuja UN carril completo del layout de pantalla completa
@@ -1323,13 +1477,22 @@ void Renderer_DrawModoGuitarHero1P(void) {   // dibuja la pantalla completa de G
 static uint16_t gh1p_puntaje_dibujado = 0xFFFF;  // 0xFFFF fuerza el primer dibujo
 static uint16_t gh1p_combo_dibujado   = 0xFFFF;
 
-void Renderer_GH1P_ActualizarPuntaje(uint16_t puntaje, uint16_t combo) {   // redibuja solo el texto de puntaje/combo, si cambio (pantalla completa)
-    if (puntaje == gh1p_puntaje_dibujado && combo == gh1p_combo_dibujado) return;   // sin cambios, no repetir el trabajo
+void Renderer_GH1P_ActualizarPuntaje(uint16_t puntaje, uint16_t combo) {   // redibuja solo la zona exacta del puntaje/combo
+    if (puntaje == gh1p_puntaje_dibujado && combo == gh1p_combo_dibujado) return;
+
     char buf[28];
-    snprintf(buf, sizeof(buf), "PUNTAJE:%u  COMBO:%u", (unsigned)puntaje, (unsigned)combo);   // arma el texto combinado
-    Texto_Sanear(buf);   // limpia cualquier byte no imprimible antes de dibujarlo
-    ILI9341_FillRect(0, 28, COCKPIT_ZONE_W, 14, COLOR_BLACK);           // borra la fila de puntaje antes de redibujar
-    draw_string_c(COCKPIT_ZONE_W / 2, 29, buf, COLOR_YELLOW, COLOR_BLACK, 1);  // centrado, debajo de la franja de titulo
+    snprintf(buf, sizeof(buf), "PUNTAJE:%u  COMBO:%u", (unsigned)puntaje, (unsigned)combo);
+    Texto_Sanear(buf);
+
+    // Calculamos el ancho exacto que ocupa el texto
+    uint16_t w = str_pixel_w(buf, 1);
+    int16_t x  = (int16_t)(COCKPIT_ZONE_W - w) / 2;
+    if (x < 0) x = 0;
+
+    // Borramos unicamente la cajita del texto (ahorra mas del 60% de trabajo a la pantalla)
+    ILI9341_FillRect((uint16_t)x, 28, w, 10, COLOR_BLACK);
+    draw_string((uint16_t)x, 29, buf, COLOR_YELLOW, COLOR_BLACK, 1);
+
     gh1p_puntaje_dibujado = puntaje;
     gh1p_combo_dibujado   = combo;
 }
@@ -1365,7 +1528,7 @@ void Renderer_GH1P_EraseNotaTrail(const Nota_t *nota, uint8_t speed) {   // borr
 void Renderer_GH1P_FlashZona(uint8_t carril) {   // flash blanco de impacto (pantalla completa)
     int16_t acx = (int16_t)GH_ZONA_CX;
     int16_t acy = (int16_t)(GH1P_LANE_TOP(carril) + GH1P_LANE_H / 2);
-    ILI9341_FillCircle(acx, acy, GH1P_ZONA_R, COLOR_WHITE);   // flash blanco de impacto
+    gh1p_fill_circle_fast(acx, acy, GH1P_ZONA_R, COLOR_WHITE, 0, 0, COLOR_BLACK);   // flash blanco de impacto, en 1 sola ventana SPI
     gh1p_flash_pendiente[carril] = 1;
 }
 
@@ -1377,26 +1540,23 @@ void Renderer_GH1P_ActualizarFlashes(void) {   // revierte los flashes pendiente
     }
 }
 
-void Renderer_GH1P_DibujarFin(uint16_t puntaje) {   // dibuja "RONDA COMPLETA" a pantalla completa
+void Renderer_GH1P_DibujarFin(uint16_t puntaje) {   // dibuja "RONDA COMPLETA" a pantalla completa (Vertical)
     char linea[24];
 
-    /* NO tocar la orientacion aca: el modo 1 jugador se mantiene en retrato
-     * (240x320) durante TODA la partida, desde GuitarHero_IniciarSolo hasta
-     * el reintento -- esta pantalla es solo el final de una ronda, no un
-     * cambio de modo. Forzar paisaje (SetPortrait(0)) aca giraba la
-     * pantalla fisica a mitad de partida sin motivo. */
+    ILI9341_SetPortrait(1);   // Forzamos orientacion Vertical (Portrait) de frente
+    ILI9341_SetFlip180(0);
     ILI9341_FillScreen(COLOR_BLACK);
 
     draw_string_c(COCKPIT_ZONE_W / 2, 50, "RONDA COMPLETA", COLOR_GREEN, COLOR_BLACK, 2);
 
-    snprintf(linea, sizeof(linea), "Puntaje: %u", (unsigned)puntaje);
+    snprintf(linea, sizeof(linea), "PUNTAJE: %u", (unsigned)puntaje);
     Texto_Sanear(linea);
     draw_string_c(COCKPIT_ZONE_W / 2, 110, linea, COLOR_YELLOW, COLOR_BLACK, 2);
 
-    draw_string_c(COCKPIT_ZONE_W / 2, 170, "V/A/AM=jugar de nuevo", COLOR_GRAY, COLOR_BLACK, 1);   // pista: cualquier boton propio reintenta
-    draw_string_c(COCKPIT_ZONE_W / 2, 185, "ROJO 2s=menu", COLOR_GRAY, COLOR_BLACK, 1);              // pista: atajo de salida
-    draw_string_c(COCKPIT_ZONE_W / 2, 200, "VERDE 2s=cancion", COLOR_GRAY, COLOR_BLACK, 1);           // pista: atajo de cambio de cancion
-    draw_string_c(COCKPIT_ZONE_W / 2, 215, "AZUL 2s=dificultad", COLOR_GRAY, COLOR_BLACK, 1);         // pista: atajo de cambio de dificultad
+    draw_string_c(COCKPIT_ZONE_W / 2, 170, "V/A/AM=REPETIR", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_string_c(COCKPIT_ZONE_W / 2, 185, "ROJO 2S=MENU", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_string_c(COCKPIT_ZONE_W / 2, 200, "VERDE 2S=CANCION", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_string_c(COCKPIT_ZONE_W / 2, 215, "AZUL 2S=DIFICULTAD", COLOR_GRAY, COLOR_BLACK, 1);
 
     gh1p_puntaje_dibujado = 0xFFFF;   // fuerza redibujo al reiniciar
     gh1p_combo_dibujado   = 0xFFFF;
@@ -1548,7 +1708,7 @@ void Renderer_ActualizarCursorJoystick(uint16_t joy_x, uint16_t joy_y, uint8_t l
     /* Registro de diagnostico por UART: permite verificar en consola la
      * correspondencia entre la lectura cruda del ADC y la posicion en
      * pantalla calculada, util para depurar el mapeo de ejes en hardware. */
-    printf("[CURSOR1P] joy_x=%u joy_y=%u -> px=%u py=%u\r\n", joy_x, joy_y, px, py);  // log de diagnostico, uno por cada movimiento real detectado
+    //printf("[CURSOR1P] joy_x=%u joy_y=%u -> px=%u py=%u\r\n", joy_x, joy_y, px, py);  // log de diagnostico, uno por cada movimiento real detectado
 
     if (sj1p_cursor_px != 0xFFFF) sj1p_borrar_cursor(sj1p_cursor_px, sj1p_cursor_py);  // borra la X de la posicion anterior (si ya habia una dibujada)
     sj1p_dibujar_cursor(px, py, listo ? COLOR_GREEN : COLOR_GRAY);  // dibuja la X nueva: verde si el stick ya volvio al centro (listo para el siguiente movimiento), gris si sigue inclinado
